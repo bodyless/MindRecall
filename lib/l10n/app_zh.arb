@@ -1,0 +1,220 @@
+{
+  "@@locale": "zh",
+  "appTitle": "回念笔记",
+  "modeEdit": "编辑",
+  "modeLive": "实时",
+  "modePreview": "预览",
+  "immersiveSourceHint": "Markdown 源码",
+  "memos": "备忘录",
+  "newMemo": "新建",
+  "collapseSidebar": "收起侧栏",
+  "expandSidebar": "展开侧栏",
+  "searchHint": "搜索关键字…",
+  "clear": "清除",
+  "caseSensitive": "区分大小写",
+  "caseInsensitive": "忽略大小写",
+  "searchResultCount": "找到 {count} 个结果",
+  "@searchResultCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "noSearchResults": "无匹配结果",
+  "matchCount": "{count} 处匹配",
+  "@matchCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "emptyMemoList": "暂无文件\n点击 + 新建",
+  "revealInExplorer": "在资源管理器中显示",
+  "rename": "重命名",
+  "delete": "删除",
+  "todayAt": "今天 {time}",
+  "@todayAt": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "yesterdayAt": "昨天 {time}",
+  "@yesterdayAt": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "dateAt": "{date} {time}",
+  "@dateAt": {
+    "placeholders": {
+      "date": { "type": "String" },
+      "time": { "type": "String" }
+    }
+  },
+  "statusSaving": "保存中…",
+  "statusSaved": "已保存",
+  "statusError": "保存失败",
+  "statusEditing": "编辑中",
+  "undo": "撤回",
+  "redo": "重做",
+  "settings": "设置",
+  "settingsSectionFormat": "格式",
+  "settingsSectionData": "数据",
+  "settingsLanguage": "语言",
+  "settingsTheme": "主题",
+  "settingsFontSize": "字体大小",
+  "settingsDebug": "调试",
+  "settingsDebugEnable": "启用调试",
+  "settingsDebugShowFps": "显示帧率",
+  "settingsDebugShowImeHud": "显示IME状态",
+  "settingsDebugShowCursorHud": "显示光标状态",
+  "settingsBackup": "数据备份",
+  "settingsBackupHint": "导出文档与用户配置到指定文件夹；重装后可从备份导入恢复。",
+  "settingsTrash": "回收站",
+  "settingsTrashHint": "有内容的文档删除后会先进入回收站；可在此恢复或清空。",
+  "exportData": "导出数据",
+  "importData": "导入数据",
+  "restoreFromTrash": "从回收站恢复",
+  "emptyTrash": "清空回收站",
+  "emptyTrashConfirmTitle": "清空回收站",
+  "emptyTrashConfirmMessage": "将永久删除回收站内全部文档，是否继续？",
+  "emptyTrashSuccess": "回收站已清空",
+  "trashEmpty": "回收站为空",
+  "restoreTrashTitle": "从回收站恢复",
+  "restoreTrashSuccess": "已恢复 {count} 篇文档",
+  "@restoreTrashSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "pinMemo": "置顶",
+  "unpinMemo": "取消置顶",
+  "appVersion": "版本 {version}",
+  "@appVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "exportSuccess": "已导出到：{path}",
+  "@exportSuccess": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "importSuccess": "已导入 {count} 篇文档",
+  "@importSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "importConfirmTitle": "导入备份",
+  "importConfirmMessage": "导入将覆盖当前本地文档与用户配置，是否继续？",
+  "exportFailed": "导出失败：{error}",
+  "@exportFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "importFailed": "导入失败：{error}",
+  "@importFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "backupPickCancelled": "已取消",
+  "fontSizeSmall": "小",
+  "fontSizeMedium": "中",
+  "fontSizeLarge": "大",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "themeLight": "浅色",
+  "themeDark": "深色",
+  "toolbarInsertLink": "插入链接",
+  "linkDialogTitle": "插入链接",
+  "linkSelectDocument": "选择文档",
+  "linkSelectDocumentTitle": "选择文档",
+  "linkNoOtherDocuments": "暂无其他可链接的文档",
+  "linkUrlLabel": "链接地址",
+  "linkUrlHint": "https://… 或文档标题",
+  "linkUrlHintMobile": "https://… 或文档标题",
+  "linkUrlHintDesktop": "https://… 或 ./笔记文件.md",
+  "linkTextLabel": "显示文字",
+  "linkOpenFailed": "无法打开链接：{error}",
+  "@linkOpenFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "titleOptional": "标题（可选）",
+  "titleHint": "留空则使用正文首行作为标题",
+  "untitled": "无标题",
+  "deleteMemoTitle": "删除备忘录",
+  "deleteMemoConfirm": "确定删除「{title}」吗？此操作不可恢复。",
+  "@deleteMemoConfirm": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "cancel": "取消",
+  "confirm": "确定",
+  "renameTitle": "重命名",
+  "renameLabel": "标题",
+  "renameHint": "输入新标题",
+  "loadFailed": "加载失败：{error}",
+  "@loadFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "openFailed": "打开失败：{error}",
+  "@openFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "createFailed": "新建失败：{error}",
+  "@createFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "imageReadFailed": "无法读取所选图片",
+  "insertImageFailed": "插入图片失败：{error}",
+  "@insertImageFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "renamed": "已重命名",
+  "renameFailed": "重命名失败：{error}",
+  "@renameFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "revealFailed": "无法打开目录：{error}",
+  "@revealFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "deleted": "已删除",
+  "deleteFailed": "删除失败：{error}",
+  "@deleteFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "moreActions": "更多操作",
+  "previewEmpty": "暂无内容可预览",
+  "imageLoadFailed": "无法加载图片",
+  "toolbarH1": "一级标题",
+  "toolbarH2": "二级标题",
+  "toolbarH3": "三级标题",
+  "toolbarBold": "粗体",
+  "toolbarItalic": "斜体",
+  "toolbarCode": "行内代码",
+  "toolbarBulletList": "无序列表",
+  "toolbarOrderedList": "有序列表",
+  "toolbarQuote": "引用",
+  "toolbarParagraph": "正文",
+  "toolbarInsertImage": "插入图片"
+}

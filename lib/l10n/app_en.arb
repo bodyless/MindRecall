@@ -1,0 +1,154 @@
+{
+  "@@locale": "en",
+  "appTitle": "Mind Recall",
+  "modeEdit": "Edit",
+  "modeLive": "Live",
+  "modePreview": "Preview",
+  "immersiveSourceHint": "Markdown source",
+  "memos": "Notes",
+  "newMemo": "New",
+  "collapseSidebar": "Collapse sidebar",
+  "expandSidebar": "Expand sidebar",
+  "searchHint": "Search keywords…",
+  "clear": "Clear",
+  "caseSensitive": "Case sensitive",
+  "caseInsensitive": "Ignore case",
+  "searchResultCount": "{count} results found",
+  "noSearchResults": "No matches",
+  "matchCount": "{count} matches",
+  "emptyMemoList": "No notes yet\nTap + to create one",
+  "revealInExplorer": "Show in file manager",
+  "rename": "Rename",
+  "delete": "Delete",
+  "todayAt": "Today {time}",
+  "yesterdayAt": "Yesterday {time}",
+  "dateAt": "{date} {time}",
+  "statusSaving": "Saving…",
+  "statusSaved": "Saved",
+  "statusError": "Save failed",
+  "statusEditing": "Editing",
+  "undo": "Undo",
+  "redo": "Redo",
+  "settings": "Settings",
+  "settingsSectionFormat": "Format",
+  "settingsSectionData": "Data",
+  "settingsLanguage": "Language",
+  "settingsTheme": "Theme",
+  "settingsFontSize": "Font size",
+  "settingsDebug": "Debug",
+  "settingsDebugEnable": "Enable debugging",
+  "settingsDebugShowFps": "Show FPS",
+  "settingsDebugShowImeHud": "Show IME status",
+  "settingsDebugShowCursorHud": "Show cursor status",
+  "settingsBackup": "Backup",
+  "settingsBackupHint": "Export notes and settings to a folder. After reinstall, import from that backup.",
+  "settingsTrash": "Trash",
+  "settingsTrashHint": "Notes with content go to trash on delete. Restore or empty them here.",
+  "exportData": "Export data",
+  "importData": "Import data",
+  "restoreFromTrash": "Restore from trash",
+  "emptyTrash": "Empty trash",
+  "emptyTrashConfirmTitle": "Empty trash",
+  "emptyTrashConfirmMessage": "Permanently delete all notes in trash?",
+  "emptyTrashSuccess": "Trash emptied",
+  "trashEmpty": "Trash is empty",
+  "restoreTrashTitle": "Restore from trash",
+  "restoreTrashSuccess": "Restored {count} notes",
+  "@restoreTrashSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "pinMemo": "Pin",
+  "unpinMemo": "Unpin",
+  "appVersion": "Version {version}",
+  "@appVersion": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "exportSuccess": "Exported to: {path}",
+  "@exportSuccess": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "importSuccess": "Imported {count} notes",
+  "@importSuccess": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "importConfirmTitle": "Import backup",
+  "importConfirmMessage": "Import will overwrite current notes and settings. Continue?",
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "importFailed": "Import failed: {error}",
+  "@importFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "backupPickCancelled": "Cancelled",
+  "fontSizeSmall": "S",
+  "fontSizeMedium": "M",
+  "fontSizeLarge": "L",
+  "languageChinese": "中文",
+  "languageEnglish": "English",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "toolbarInsertLink": "Insert link",
+  "linkDialogTitle": "Insert link",
+  "linkSelectDocument": "Choose document",
+  "linkSelectDocumentTitle": "Choose document",
+  "linkNoOtherDocuments": "No other documents available",
+  "linkUrlLabel": "URL",
+  "linkUrlHint": "https://… or document title",
+  "linkUrlHintMobile": "https://… or document title",
+  "linkUrlHintDesktop": "https://… or ./note.md",
+  "linkTextLabel": "Display text",
+  "linkOpenFailed": "Unable to open link: {error}",
+  "@linkOpenFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "titleOptional": "Title (optional)",
+  "titleHint": "Leave empty to use the first line as title",
+  "untitled": "Untitled",
+  "deleteMemoTitle": "Delete note",
+  "deleteMemoConfirm": "Delete \"{title}\"? This cannot be undone.",
+  "cancel": "Cancel",
+  "confirm": "OK",
+  "renameTitle": "Rename",
+  "renameLabel": "Title",
+  "renameHint": "Enter a new title",
+  "loadFailed": "Failed to load: {error}",
+  "openFailed": "Failed to open: {error}",
+  "createFailed": "Failed to create: {error}",
+  "imageReadFailed": "Unable to read the selected image",
+  "insertImageFailed": "Failed to insert image: {error}",
+  "renamed": "Renamed",
+  "renameFailed": "Rename failed: {error}",
+  "revealFailed": "Unable to open folder: {error}",
+  "deleted": "Deleted",
+  "deleteFailed": "Delete failed: {error}",
+  "moreActions": "More actions",
+  "previewEmpty": "Nothing to preview",
+  "imageLoadFailed": "Unable to load image",
+  "toolbarH1": "Heading 1",
+  "toolbarH2": "Heading 2",
+  "toolbarH3": "Heading 3",
+  "toolbarBold": "Bold",
+  "toolbarItalic": "Italic",
+  "toolbarCode": "Inline code",
+  "toolbarBulletList": "Bullet list",
+  "toolbarOrderedList": "Numbered list",
+  "toolbarQuote": "Quote",
+  "toolbarParagraph": "Paragraph",
+  "toolbarInsertImage": "Insert image"
+}
