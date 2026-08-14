@@ -1,0 +1,61 @@
+---
+description: 功能变更同步 README、中文注释、避免 magic number
+alwaysApply: true
+---
+
+# 项目开发规范
+
+## 1. README 同步
+
+新增、删除或修改**用户可见功能**、架构、模块边界、API 约束后，必须同步更新 `README.md`：
+
+- **功能概览**：用户能感知的行为变化
+- **目录结构**：新增/移动/删除的 `lib/` 路径
+- **架构 / 数据流**：模块依赖或关键 invariant 变化
+- **Agent 扩展指南 / 易踩坑**：新约束或已修复的典型 bug
+
+仅内部重构且对外行为不变时，可只更新目录结构；纯样式微调可不更新。
+
+## 2. 注释语言
+
+代码注释使用**中文**；以下保持英文原文：
+
+- 术语：`AST`、`Markdown`、`Widget`、`FocusNode` 等
+- 关键字与 API 名：`parseMarkdownBlocks`、`applyPlainTextChange`
+- 文件路径、包名、枚举值
+
+```dart
+// ❌ 避免
+// Syncs keystrokes back into block AST.
+
+// ✅ 推荐
+// 将输入同步回块 AST；含行内格式时须用 applyPlainTextChange。
+```
+
+公开 API（`///`）同样遵循上述规则。
+
+## 3. 常量抽取
+
+避免 magic number / magic string；语义明确的值抽到命名常量：
+
+```dart
+// ❌ 避免
+Timer(const Duration(milliseconds: 800), _save);
+if (width >= 720) { ... }
+
+// ✅ 推荐
+static const _autoSaveDelay = Duration(milliseconds: 800);
+static const _wideLayoutBreakpoint = 720.0;
+```
+
+- 类内私有：`static const _xxx`
+- 跨文件共享：放到 `lib/app_config.dart` 或模块内 `*_constants.dart`
+- `0`、`1`、空字符串等等价 obvious 写法可保留；布局、超时、时长、重复字面量必须命名
+
+## 4. 单元测试门禁
+
+功能 / 修复收尾须遵守 `.cursor/rules/unit-testing.mdc`：补测到 `test/`，并跑通 `scripts/run_unit_tests`。
+
+## 5. 已修复 Bug 清单
+
+修 Bug 前先读、修完后写入 `agents/fixed_list.md`（详见 `.cursor/rules/fixed-bugs.mdc`）。

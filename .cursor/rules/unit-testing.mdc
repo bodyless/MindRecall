@@ -1,0 +1,29 @@
+---
+description: 功能/修复必须补测，并用 scripts/run_unit_tests 全量跑通后才算完成
+alwaysApply: true
+---
+
+# 单元测试门禁
+
+## 目录约定
+
+- **唯一测试根目录**：仓库根下的 `test/`
+- Flutter 默认**不会**把 `test/` 打进 App 包；禁止把用例放到 `lib/` 或 `assets/`
+- 命名：`test/<主题>_test.dart`（例：`md_inline_test.dart`、`live_block_ops_test.dart`）
+- 工具型生成脚本若需 `flutter test` 驱动，可放 `tool/`，但**功能回归用例仍归 `test/`**
+
+## 完成定义（Definition of Done）
+
+每次**新功能**、**优化**或 **bug 修复**完成后，在宣告完成前必须同时满足：
+
+1. **新增或更新**对应单元测试（覆盖本次行为与关键回归点；禁止只改产品代码不补测）
+2. **全量跑测**通过：
+   - Windows：`.\scripts\run_unit_tests.ps1`
+   - macOS / Linux：`./scripts/run_unit_tests.sh`
+3. 脚本非 0 退出时：**不得**声称任务完成；继续改代码/测试并重跑，直到 PASSED
+
+## Agent 约束
+
+- 功能/修复收尾时**主动**执行上述脚本，勿等用户提醒
+- 优先用脚本而非手写零散 `flutter test <单文件>` 作为完成门禁（调试阶段可先跑单文件，最终必须以脚本全量为准）
+- 测试失败时根据输出定位，迭代至全部绿色后再总结交付
