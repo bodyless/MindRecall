@@ -3,38 +3,38 @@ import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:mind_recall/app_layout_constants.dart';
 import 'package:mind_recall/core/debug/cursor_debug_hud.dart';
 import 'package:mind_recall/core/debug/debug_timeline.dart';
-import 'package:mind_recall/core/debug/ime_debug_hud.dart';
-import 'package:mind_recall/core/debug/ime_timeline.dart';
+import 'package:mind_recall/core/markdown/md_block_chrome_metrics.dart';
+import 'package:mind_recall/core/ui/ime_height_cache.dart';
+import 'package:mind_recall/core/ui/ime_metrics_observer.dart';
 import 'package:mind_recall/l10n/app_localizations.dart';
 
 import 'package:mind_recall/features/memo/editor/markdown_link_actions.dart';
 import 'package:mind_recall/features/memo/editor/document_history.dart';
 import 'package:mind_recall/features/memo/editor/live/live_markdown_editor.dart';
+import 'package:mind_recall/features/memo/editor/memo_workspace_controller.dart';
+import 'package:mind_recall/features/memo/editor/edit_ime_coordinator.dart';
 import 'package:mind_recall/features/memo/editor/mode_input_session.dart';
 import 'package:mind_recall/features/memo/editor/plain_text/markdown_editor_helper.dart';
 import 'package:mind_recall/features/memo/editor/widgets/markdown_toolbar.dart';
 import 'package:mind_recall/features/memo/editor/widgets/memo_markdown_preview.dart';
+import 'package:mind_recall/features/memo/editor/widgets/rename_memo_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/trash_restore_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/link_insert_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/keyboard_aware_markdown_toolbar.dart';
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel_logic.dart';
 import 'package:mind_recall/features/memo/memo_markdown_image_resolver.dart';
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel.dart';
 import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/models/user_preferences.dart';
-import 'package:mind_recall/services/data_backup_service.dart';
 import 'package:mind_recall/services/memo_image_service.dart';
-import 'package:mind_recall/services/memo_search_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
-import 'package:mind_recall/services/memo_trash_service.dart';
-import 'package:mind_recall/services/session_cache_service.dart';
 import 'package:mind_recall/services/user_preferences_service.dart';
 import 'package:mind_recall/shared/widgets/settings_panel.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
-enum SaveStatus { idle, saving, saved, error }
 
 enum EditorViewMode { edit, live, preview }
 
@@ -70,7 +70,6 @@ class MemoEditorScreen extends StatefulWidget {
 
 class _MemoEditorScreenState extends State<MemoEditorScreen> {
   static const _autoSaveDelay = Duration(milliseconds: 800);
-  static const _searchDelay = Duration(milliseconds: 300);
   static const _sidebarWidth = 280.0;
   static const _contentLineHeight = 24.0;
   static const _liveFocusBlurGrace = Duration(milliseconds: 400);
@@ -81,8 +80,6 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   static const _drawerImePollInterval = Duration(milliseconds: 32);
 
   final _storage = MemoStorageService();
-  final _sessionCache = SessionCacheService();
-  final _searchService = MemoSearchService();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   final _searchController = TextEditingController();
@@ -93,47 +90,59 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   final _liveEditorKey = GlobalKey<LiveMarkdownEditorState>();
   final _contentFieldKey = GlobalKey();
 
-  List<Memo> _memos = [];
-  List<MemoSearchResult> _searchResults = [];
-  List<String> _pinnedMemoIds = [];
-  String? _activeMemoId;
+  late final MemoWorkspaceController _workspace = MemoWorkspaceController(
+    titleController: _titleController,
+    contentController: _contentController,
+    searchController: _searchController,
+  );
+
+  late final EditImeCoordinator _editIme = EditImeCoordinator(
+    session: _editSession,
+    contentController: _contentController,
+    contentFieldKey: _contentFieldKey,
+    isMounted: () => mounted,
+    isEditMode: () => _viewMode == EditorViewMode.edit,
+    isSuspended: () => _editorFocusSuspended,
+    isDrawerOpen: () => _drawerOpen,
+    layoutWidth: () => MediaQuery.sizeOf(context).width,
+    rebuild: (fn) {
+      if (mounted) {
+        setState(fn);
+      }
+    },
+  );
+
+  ValueNotifier<double> get _settledImeKeyboardInset =>
+      _editIme.keyboardBottomInset;
+  ValueNotifier<double> get _toolbarImeKeyboardInset =>
+      _editIme.toolbarKeyboardInset;
+
+  List<Memo> get _memos => _workspace.memos;
+  List<MemoSearchResult> get _searchResults => _workspace.searchResults;
+  List<String> get _pinnedMemoIds => _workspace.pinnedMemoIds;
+  String? get _activeMemoId => _workspace.activeMemoId;
+  SaveStatus get _saveStatus => _workspace.saveStatus;
+  String? get _saveError => _workspace.saveError;
+  bool get _isSearchActive => _workspace.isSearchActive;
+  bool get _caseSensitive => _workspace.caseSensitive;
+  bool get _isDirty => _workspace.isDirty;
+
   String? _appVersionLabel;
-  String _savedTitle = '';
-  String _savedContent = '';
-  SaveStatus _saveStatus = SaveStatus.saved;
-  String? _saveError;
   bool _suppressAutoSave = false;
   bool _isInitializing = true;
-  bool _isSearchActive = false;
-  bool _caseSensitive = false;
   final _sidebarReveal = SidebarRevealState();
   EditorViewMode _viewMode = EditorViewMode.live;
   Timer? _autoSaveTimer;
-  Timer? _searchDebounceTimer;
   Timer? _historyTimer;
-  /// 编辑模式 IME 滚入：每帧最多调度一次，避免 metrics 连发打爆 ensureVisible。
-  bool _editImeScrollScheduled = false;
-  /// 键盘 metrics 收稳后做最终留白对齐 + 一次滚入。
-  Timer? _editImeSettleTimer;
-  /// 打开时工具栏静止后一次性显栏（与正文 settle 解耦）。
-  Timer? _editToolbarRevealTimer;
-  int? _editImeBurstStartMs;
-  int _editImeSettleResetCount = 0;
-  double _editImeSettleArmedPending = 0;
-  double _editToolbarRevealArmedPending = 0;
-  /// 窄屏正文 settled 键盘高度（Live spacer / 与滚入同步；先于此提交）。
-  final ValueNotifier<double> _settledImeKeyboardInset = ValueNotifier<double>(0);
-  /// 窄屏工具栏贴齐高度；打开时静止后一次性写入，同一次打开不改高度。
-  final ValueNotifier<double> _toolbarImeKeyboardInset = ValueNotifier<double>(0);
   final _documentHistory = DocumentHistory();
   bool _applyingHistory = false;
 
-  late final _EditKeyboardMetricsObserver _editKeyboardMetricsObserver =
-      _EditKeyboardMetricsObserver(_onEditKeyboardMetricsChanged);
+  late final ImeMetricsObserver _editKeyboardMetricsObserver =
+      ImeMetricsObserver(_onEditKeyboardMetricsChanged);
 
   /// 侧滑开抽屉门禁：仅在系统 IME inset 越过阈值导致「可否侧滑」翻转时 setState。
-  late final _EditKeyboardMetricsObserver _drawerImeGateObserver =
-      _EditKeyboardMetricsObserver(_syncDrawerOpenDragGestureGate);
+  late final ImeMetricsObserver _drawerImeGateObserver =
+      ImeMetricsObserver(_syncDrawerOpenDragGestureGate);
 
   /// 上次采样的系统 IME inset（逻辑像素），用于检测侧滑门禁翻转。
   double _drawerGateInsetLogical = 0;
@@ -153,6 +162,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     super.initState();
     WidgetsBinding.instance.addObserver(_editKeyboardMetricsObserver);
     WidgetsBinding.instance.addObserver(_drawerImeGateObserver);
+    _workspace.addListener(_onWorkspaceChanged);
     _titleController.addListener(_onEditorChanged);
     _contentController.addListener(_onContentControllerChanged);
     _editSession.focusNode.addListener(_onEditFocusChanged);
@@ -167,10 +177,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
-    _searchDebounceTimer?.cancel();
     _historyTimer?.cancel();
-    _editImeSettleTimer?.cancel();
-    _editToolbarRevealTimer?.cancel();
+    _workspace.removeListener(_onWorkspaceChanged);
+    _workspace.dispose();
+    _editIme.dispose();
     WidgetsBinding.instance.removeObserver(_editKeyboardMetricsObserver);
     WidgetsBinding.instance.removeObserver(_drawerImeGateObserver);
     _titleController.dispose();
@@ -179,146 +189,38 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     _titleFocusNode.dispose();
     _editSession.dispose();
     _liveSession.dispose();
-    _settledImeKeyboardInset.dispose();
-    _toolbarImeKeyboardInset.dispose();
     super.dispose();
-  }
-
-  void _setSettledImeKeyboardInset(double logical) {
-    if (_settledImeKeyboardInset.value == logical) {
-      return;
-    }
-    _settledImeKeyboardInset.value = logical;
-  }
-
-  void _setToolbarImeKeyboardInset(double logical) {
-    if (_toolbarImeKeyboardInset.value == logical) {
-      return;
-    }
-    _toolbarImeKeyboardInset.value = logical;
-  }
-
-  void _cancelEditToolbarRevealTimer() {
-    _editToolbarRevealTimer?.cancel();
-    _editToolbarRevealTimer = null;
-  }
-
-  /// 打开：pending 真正静止后一次性显栏；已显示则不再改高度。
-  void _armEditToolbarRevealTimer() {
-    if (!shouldRevealImeToolbarOnce(
-      pendingLogical: _editSession.pendingKeyboardInset,
-      toolbarLogical: _toolbarImeKeyboardInset.value,
-    )) {
-      _cancelEditToolbarRevealTimer();
-      return;
-    }
-    _editToolbarRevealTimer?.cancel();
-    _editToolbarRevealArmedPending = _editSession.pendingKeyboardInset;
-    _editToolbarRevealTimer = Timer(kImeToolbarOpenSettleDelay, () {
-      if (!mounted ||
-          _viewMode != EditorViewMode.edit ||
-          !_editSession.focusNode.hasFocus ||
-          _editorFocusSuspended ||
-          _drawerOpen) {
-        return;
-      }
-      final next = _editSession.pendingKeyboardInset;
-      if (!shouldRevealImeToolbarOnce(
-        pendingLogical: next,
-        toolbarLogical: _toolbarImeKeyboardInset.value,
-      )) {
-        return;
-      }
-      _setToolbarImeKeyboardInset(next);
-      imeTimelineCommit(
-        ImeTimelineScope.toolbar,
-        pendingLogical: next,
-        committedLogical: next,
-        reason: 'revealOnce',
-      );
-      _publishEditImeDebugHud(
-        burstMs:
-            DateTime.now().millisecondsSinceEpoch - (_editImeBurstStartMs ?? 0),
-        focused: true,
-        lastCommitReason: 'toolbarReveal',
-      );
-    });
-  }
-
-  void _maybeArmEditToolbarRevealDuringOpen() {
-    if (!shouldRevealImeToolbarOnce(
-      pendingLogical: _editSession.pendingKeyboardInset,
-      toolbarLogical: _toolbarImeKeyboardInset.value,
-    )) {
-      _cancelEditToolbarRevealTimer();
-      return;
-    }
-    final hadActive = _editToolbarRevealTimer?.isActive ?? false;
-    final restart = !hadActive ||
-        shouldRestartImeToolbarOpenSettle(
-          pendingLogical: _editSession.pendingKeyboardInset,
-          armedPendingLogical: _editToolbarRevealArmedPending,
-        );
-    if (restart) {
-      _armEditToolbarRevealTimer();
-    }
   }
 
   /// 收起/切模式：正文留白与工具栏同拍清零。
   void _clearImeInsets() {
-    _cancelEditToolbarRevealTimer();
-    _setSettledImeKeyboardInset(0);
-    _setToolbarImeKeyboardInset(0);
+    _editIme.clearInsets();
   }
 
-  /// 屏上 IME HUD（仅 debug）；[lastCommitReason] 为 null 时保留上次 reason。
-  void _publishEditImeDebugHud({
-    required int burstMs,
-    required bool focused,
-    String? lastCommitReason,
-  }) {
-    publishImeDebugHud(
-      scope: ImeTimelineScope.edit,
-      pendingLogical: _editSession.pendingKeyboardInset,
-      committedLogical: _editSession.keyboardBottomInset,
-      toolbarLogical: _toolbarImeKeyboardInset.value,
-      burstMs: burstMs,
-      settleResetCount: _editImeSettleResetCount,
-      settleActive: (_editImeSettleTimer?.isActive ?? false) ||
-          (_editToolbarRevealTimer?.isActive ?? false),
-      focused: focused,
-      lastCommitReason: lastCommitReason,
-    );
+  void _onWorkspaceChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _initializeWorkspace() async {
     await debugTimelineAsync('Editor.initWorkspace', () async {
       try {
-        try {
-          await _sessionCache.load().timeout(const Duration(milliseconds: 300));
-          _pinnedMemoIds = List<String>.from(_sessionCache.cache.pinnedMemoIds);
-        } catch (_) {
-          _pinnedMemoIds = [];
-        }
-
-        final memos = await debugTimelineAsync(
+        await debugTimelineAsync(
           'Editor.listMemos',
-          _storage.listMemos,
+          _workspace.loadPinsAndList,
         );
-        MemoStorageService.sortMemosWithPins(memos, _pinnedMemoIds);
         if (!mounted) {
           return;
         }
 
-        setState(() => _memos = memos);
-
-        if (memos.isNotEmpty) {
-          final lastOpenedId = _sessionCache.cache.lastOpenedMemoId ??
+        if (_workspace.memos.isNotEmpty) {
+          final lastOpenedId = _workspace.lastOpenedMemoId ??
               widget.prefsService.preferences.lastOpenedMemoId;
           final restoreId = lastOpenedId != null &&
-                  memos.any((memo) => memo.id == lastOpenedId)
+                  _workspace.memos.any((memo) => memo.id == lastOpenedId)
               ? lastOpenedId
-              : memos.first.id;
+              : _workspace.memos.first.id;
           await _openMemo(restoreId, refreshList: false);
         } else {
           await _createNewMemo(refreshList: false);
@@ -353,10 +255,6 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
   }
 
-  bool get _isDirty =>
-      _titleController.text != _savedTitle ||
-      _contentController.text != _savedContent;
-
   bool _editorFocusSuspended = false;
   bool _restoreContentFocusAfterSuspend = false;
   bool _restoreTitleFocusAfterSuspend = false;
@@ -376,7 +274,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         _liveSession.hadFocus;
     _restoreTitleFocusAfterSuspend = _titleFocusNode.hasFocus;
     _editorFocusSuspended = true;
-    _editImeSettleTimer?.cancel();
+    _editIme.cancelSettleTimer();
     // 立刻收起工具栏并 snap 掉 IME 留白，避免键盘下落期间每帧改 padding 与抽屉抢 GPU。
     final hideChrome =
         _editSession.focusNode.hasFocus || _liveSession.inputSessionActive;
@@ -510,7 +408,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       // 键盘已展开时立刻滚；正在弹出则等 metrics settle，避免动画中途乱滚。
       if (_editSession.keyboardBottomInset > 0 ||
           _editSession.pendingKeyboardInset > 0) {
-        _scheduleScrollEditCaretAboveIme();
+        _editIme.scheduleScrollCaretAboveIme();
       }
       return;
     }
@@ -613,7 +511,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
     _editSession.lastSelectionForIme = selection;
-    _scheduleScrollEditCaretAboveIme();
+    _editIme.scheduleScrollCaretAboveIme();
   }
 
   /// 编辑模式光标 HUD（仅 debug）；实时模式由 Live 编辑器自行发布。
@@ -655,370 +553,36 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       ),
     );
   }
-
-  void _armEditImeSettleTimer({required int burstOriginMs}) {
-    _editImeSettleTimer?.cancel();
-    _editImeSettleArmedPending = _editSession.pendingKeyboardInset;
-    _editImeSettleTimer = Timer(kImeInsetSettleDelay, () {
-      if (!mounted ||
-          _viewMode != EditorViewMode.edit ||
-          !_editSession.focusNode.hasFocus ||
-          _editorFocusSuspended ||
-          _drawerOpen) {
-        return;
-      }
-      final settleBurstMs =
-          DateTime.now().millisecondsSinceEpoch - burstOriginMs;
-      final willCommit = shouldCommitImeInset(
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: _editSession.keyboardBottomInset,
-      );
-      imeTimelineSettle(
-        ImeTimelineScope.edit,
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: _editSession.keyboardBottomInset,
-        burstMs: settleBurstMs,
-        settleResetCount: _editImeSettleResetCount,
-        willCommit: willCommit,
-      );
-      if (!willCommit) {
-        return;
-      }
-      final next = _editSession.pendingKeyboardInset;
-      // 正文 settle 只改留白；工具栏由静止后 revealOnce 单独弹出。
-      setState(() => _editSession.keyboardBottomInset = next);
-      imeTimelineCommit(
-        ImeTimelineScope.edit,
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: _editSession.keyboardBottomInset,
-        reason: 'settle',
-      );
-      _publishEditImeDebugHud(
-        burstMs: settleBurstMs,
-        focused: true,
-        lastCommitReason: 'settle',
-      );
-      if (next > 0) {
-        _scheduleEditSettleNudge();
-      }
-    });
-  }
-
-  /// 编辑 settle：padding 布局后单次上推（工具栏已同拍显示）。
-  void _scheduleEditSettleNudge() {
-    if (_editImeScrollScheduled) {
-      return;
-    }
-    _editImeScrollScheduled = true;
-    imeTimelineScroll(ImeTimelineScope.edit, reason: 'settle');
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _editImeScrollScheduled = false;
-      if (!mounted ||
-          _viewMode != EditorViewMode.edit ||
-          !_editSession.focusNode.hasFocus) {
-        return;
-      }
-      _nudgeEditCaretAboveIme();
-    });
-  }
-
   void _onEditKeyboardMetricsChanged() {
     if (!mounted || _viewMode != EditorViewMode.edit) {
       return;
     }
-    // 抽屉/系统浮层期间忽略 metrics，避免与侧栏动画抢主线程。
-    if (_editorFocusSuspended || _drawerOpen) {
-      return;
-    }
     final view = View.of(context);
     final inset = view.viewInsets.bottom / view.devicePixelRatio;
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final hadActiveSettle = _editImeSettleTimer?.isActive ?? false;
-    if (!hadActiveSettle) {
-      _editImeBurstStartMs = nowMs;
-      _editImeSettleResetCount = 0;
-    }
-    _editSession.pendingKeyboardInset =
-        _editSession.focusNode.hasFocus ? inset : 0;
-    final burstOriginMs = _editImeBurstStartMs ?? nowMs;
-    final burstMs = nowMs - burstOriginMs;
-
-    if (!_editSession.focusNode.hasFocus) {
-      _editImeSettleTimer?.cancel();
-      _cancelEditToolbarRevealTimer();
-      var clearedForUnfocus = false;
-      if (_editSession.keyboardBottomInset != 0 ||
-          _settledImeKeyboardInset.value != 0 ||
-          _toolbarImeKeyboardInset.value != 0) {
-        _clearImeInsets();
-        setState(() => _editSession.resetKeyboardInsets());
-        clearedForUnfocus = true;
-        imeTimelineCommit(
-          ImeTimelineScope.edit,
-          pendingLogical: 0,
-          committedLogical: 0,
-          reason: 'unfocused',
-        );
-      }
-      imeTimelineMetrics(
-        ImeTimelineScope.edit,
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: _editSession.keyboardBottomInset,
-        burstMs: burstMs,
-        settleResetCount: _editImeSettleResetCount,
-        focused: false,
-      );
-      _publishEditImeDebugHud(
-        burstMs: burstMs,
-        focused: false,
-        lastCommitReason: clearedForUnfocus ? 'unfocused' : null,
-      );
-      return;
-    }
-
-    if (shouldCommitImeDismissImmediately(
-      pendingLogical: _editSession.pendingKeyboardInset,
-      committedLogical: _editSession.keyboardBottomInset,
-    )) {
-      _editImeSettleTimer?.cancel();
-      _clearImeInsets();
-      setState(() => _editSession.keyboardBottomInset = 0);
-      imeTimelineCommit(
-        ImeTimelineScope.edit,
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: 0,
-        reason: 'dismissImmediate',
-      );
-      imeTimelineMetrics(
-        ImeTimelineScope.edit,
-        pendingLogical: _editSession.pendingKeyboardInset,
-        committedLogical: 0,
-        burstMs: burstMs,
-        settleResetCount: _editImeSettleResetCount,
-        focused: true,
-      );
-      _publishEditImeDebugHud(
-        burstMs: burstMs,
-        focused: true,
-        lastCommitReason: 'dismissImmediate',
-      );
-      return;
-    }
-
-    final restart = !hadActiveSettle ||
-        shouldRestartImeSettleTimer(
-          pendingLogical: _editSession.pendingKeyboardInset,
-          armedPendingLogical: _editImeSettleArmedPending,
-        );
-    if (restart) {
-      if (hadActiveSettle) {
-        _editImeSettleResetCount++;
-      }
-      _armEditImeSettleTimer(burstOriginMs: burstOriginMs);
-    }
-    _maybeArmEditToolbarRevealDuringOpen();
-
-    imeTimelineMetrics(
-      ImeTimelineScope.edit,
-      pendingLogical: _editSession.pendingKeyboardInset,
-      committedLogical: _editSession.keyboardBottomInset,
-      burstMs: burstMs,
-      settleResetCount: _editImeSettleResetCount,
-      focused: true,
+    _editIme.onKeyboardMetricsChanged(
+      cacheKey: imeHeightCacheKeyForView(view),
+      inset: inset,
     );
-    _publishEditImeDebugHud(burstMs: burstMs, focused: true);
   }
 
-  void _scheduleScrollEditCaretAboveIme({String? reason}) {
-    if (_editImeScrollScheduled) {
-      return;
-    }
-    _editImeScrollScheduled = true;
-    imeTimelineScroll(ImeTimelineScope.edit, reason: reason);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _editImeScrollScheduled = false;
-      if (!mounted ||
-          _viewMode != EditorViewMode.edit ||
-          !_editSession.focusNode.hasFocus) {
-        return;
-      }
-      _scrollEditCaretAboveIme();
-    });
-  }
-
-  /// 编辑模式：将光标滚出键盘/底部工具栏遮挡区（对齐实时模式 ensureVisible + nudge）。
-  void _scrollEditCaretAboveIme() {
-    if (_viewMode != EditorViewMode.edit || !_editSession.focusNode.hasFocus) {
-      return;
-    }
-    final selection = _contentController.selection;
-    if (!selection.isValid) {
-      return;
-    }
-    final editable = _findEditEditableTextState();
-    if (editable == null) {
-      return;
-    }
-    // 先走框架 bringIntoView（尊重 TextField.scrollPadding）。
-    editable.bringIntoView(selection.extent);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _nudgeEditCaretAboveIme();
-      }
-    });
-  }
-
-  /// 从焦点或 TextField 子树定位 [EditableTextState]（Focus 上下文偶发找不到祖先时兜底）。
-  EditableTextState? _findEditEditableTextState() {
-    final fromFocus = _editSession.focusNode.context
-        ?.findAncestorStateOfType<EditableTextState>();
-    if (fromFocus != null) {
-      return fromFocus;
-    }
-    final root = _contentFieldKey.currentContext;
-    if (root is! Element) {
-      return null;
-    }
-    EditableTextState? found;
-    void visit(Element element) {
-      if (found != null) {
-        return;
-      }
-      if (element is StatefulElement && element.state is EditableTextState) {
-        found = element.state as EditableTextState;
-        return;
-      }
-      element.visitChildren(visit);
-    }
-
-    visit(root);
-    return found;
-  }
-
-  /// scrollPadding / bringIntoView 不知底部工具栏叠层时，再按实测坐标上推。
-  void _nudgeEditCaretAboveIme() {
-    if (_viewMode != EditorViewMode.edit || !_editSession.focusNode.hasFocus) {
-      return;
-    }
-    final controller = _editSession.scrollController;
-    if (!controller.hasClients) {
-      return;
-    }
-    final editable = _findEditEditableTextState();
-    final fieldContext = _contentFieldKey.currentContext;
-    if (editable == null || fieldContext == null) {
-      return;
-    }
-    final selection = _contentController.selection;
-    if (!selection.isValid) {
-      return;
-    }
-
-    // 底部 IME spacer 已缩短 TextField 视口时，勿再按满高 obscured 二次上推。
-    final isWide =
-        MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
-    final spacer = editImeBottomSpacerHeight(
-      keyboardInset: _editSession.keyboardBottomInset,
-      focused: true,
-      includeToolbar: !isWide,
-    );
-    if (spacer > 0) {
-      return;
-    }
-
-    final renderEditable = editable.renderEditable;
-    final caretRect = renderEditable.getLocalRectForCaret(
-      TextPosition(offset: selection.extentOffset),
-    );
-    final caretGlobalBottom =
-        renderEditable.localToGlobal(Offset(0, caretRect.bottom)).dy;
-
-    final fieldBox = fieldContext.findRenderObject() as RenderBox?;
-    if (fieldBox == null || !fieldBox.hasSize) {
-      return;
-    }
-    final viewportGlobalBottom =
-        fieldBox.localToGlobal(Offset(0, fieldBox.size.height)).dy;
-
-    final delta = scrollDeltaToClearIme(
-      caretOrBlockGlobalBottom: caretGlobalBottom,
-      viewportGlobalBottom: viewportGlobalBottom,
-      obscuredBottom: kImeCaretGap,
-    );
-    if (delta <= 0) {
-      return;
-    }
-    final nextOffset = (controller.offset + delta).clamp(
-      controller.position.minScrollExtent,
-      controller.position.maxScrollExtent,
-    );
-    if ((nextOffset - controller.offset).abs() < 0.5) {
-      // 已顶到 maxScrollExtent：多半是底部 contentPadding 尚未带上 IME 留白。
-      return;
-    }
-    controller.jumpTo(nextOffset);
-  }
-
-  Future<void> _refreshMemoList({String? selectId}) async {
-    final memos = await _storage.listMemos();
-    MemoStorageService.sortMemosWithPins(memos, _pinnedMemoIds);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _memos = memos;
-      if (selectId != null) {
-        _activeMemoId = selectId;
-      }
-    });
+  Future<void> _refreshMemoList({String? selectId}) {
+    return _workspace.refreshList(selectId: selectId);
   }
 
   void _onSearchChanged() {
-    final query = _searchController.text;
-    // 清空时立即退出搜索态，勿等防抖（否则会短暂/卡住「无匹配结果」）。
-    if (query.trim().isEmpty && (_isSearchActive || _searchResults.isNotEmpty)) {
-      setState(() {
-        _searchResults = [];
-        _isSearchActive = false;
-      });
-    } else {
-      setState(() {});
+    final l10n = AppLocalizations.of(context);
+    if (l10n != null) {
+      _workspace.untitledLabel = l10n.untitled;
     }
-    _searchDebounceTimer?.cancel();
-    _searchDebounceTimer = Timer(_searchDelay, _runSearch);
-  }
-
-  void _runSearch() {
-    final query = _searchController.text;
-    if (query.trim().isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _searchResults = [];
-        _isSearchActive = false;
-      });
-      return;
-    }
-
-    final results = _searchService.searchMemos(
-      memos: _memos,
-      query: query,
-      caseSensitive: _caseSensitive,
-      untitledLabel: AppLocalizations.of(context)!.untitled,
-    );
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _searchResults = results;
-      _isSearchActive = true;
-    });
+    _workspace.onSearchChanged();
   }
 
   void _onCaseSensitiveChanged(bool value) {
-    setState(() => _caseSensitive = value);
-    _runSearch();
+    final l10n = AppLocalizations.of(context);
+    if (l10n != null) {
+      _workspace.untitledLabel = l10n.untitled;
+    }
+    _workspace.setCaseSensitive(value);
   }
 
   void _onEditorChanged() {
@@ -1080,94 +644,15 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   void _scheduleAutoSave() {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = Timer(_autoSaveDelay, () {
-      unawaited(_saveActiveMemo());
+      unawaited(_workspace.saveActive());
     });
-    if (_saveStatus != SaveStatus.idle) {
-      setState(() {
-        _saveStatus = SaveStatus.idle;
-        _saveError = null;
-      });
-    }
+    _workspace.markIdleIfDirty();
   }
-
-  Future<void>? _ongoingSave;
 
   Future<void> _flushSave() async {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
-    if (_ongoingSave != null) {
-      await _ongoingSave;
-    }
-    if (_activeMemoId != null && _isDirty) {
-      await _saveActiveMemo();
-    }
-  }
-
-  Future<void> _saveActiveMemo() async {
-    final memoId = _activeMemoId;
-    if (memoId == null || !_isDirty) {
-      return;
-    }
-
-    if (_ongoingSave != null) {
-      await _ongoingSave;
-      if (_activeMemoId != memoId || !_isDirty) {
-        return;
-      }
-    }
-
-    final saveFuture = _performSave(memoId);
-    _ongoingSave = saveFuture;
-    await saveFuture;
-    if (_ongoingSave == saveFuture) {
-      _ongoingSave = null;
-    }
-  }
-
-  Future<void> _performSave(String memoId) async {
-    if (!_isDirty) {
-      if (mounted) {
-        setState(() => _saveStatus = SaveStatus.saved);
-      }
-      return;
-    }
-
-    setState(() {
-      _saveStatus = SaveStatus.saving;
-      _saveError = null;
-    });
-
-    try {
-      final updated = await _storage.updateMemo(
-        id: memoId,
-        title: _titleController.text,
-        content: _contentController.text,
-      );
-      if (!mounted || _activeMemoId != memoId) {
-        return;
-      }
-
-      _savedTitle = _titleController.text;
-      _savedContent = _contentController.text;
-
-      setState(() {
-        _saveStatus = SaveStatus.saved;
-        _memos = _memos
-            .map((memo) => memo.id == updated.id ? updated : memo)
-            .toList();
-      });
-      if (_isSearchActive) {
-        _runSearch();
-      }
-    } catch (error) {
-      if (!mounted || _activeMemoId != memoId) {
-        return;
-      }
-      setState(() {
-        _saveStatus = SaveStatus.error;
-        _saveError = '$error';
-      });
-    }
+    await _workspace.flushSave();
   }
 
   Future<void> _openMemo(
@@ -1183,12 +668,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
 
-    await _flushSave();
-
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _suppressAutoSave = true;
     try {
       final memo = await debugTimelineAsync(
         'Editor.loadMemo',
-        () => _storage.loadMemo(id),
+        () => _workspace.openMemo(id, refreshList: refreshList),
         arguments: {'id': id},
       );
       if (!mounted) {
@@ -1198,14 +684,11 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       debugTimelineSync('Editor.loadMemoIntoEditor', () {
         _loadMemoIntoEditor(memo, jumpTarget: jumpTarget);
       });
-      if (refreshList) {
-        await _refreshMemoList(selectId: id);
-      } else {
-        setState(() => _activeMemoId = id);
-      }
       _closeDrawerIfNeeded();
     } catch (error) {
       _showMessage(AppLocalizations.of(context)!.openFailed('$error'));
+    } finally {
+      _suppressAutoSave = false;
     }
   }
 
@@ -1217,44 +700,28 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   }
 
   Future<void> _createNewMemo({bool refreshList = true}) async {
-    await _flushSave();
-
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _suppressAutoSave = true;
     try {
-      final memo = await _storage.createMemo();
+      final memo = await _workspace.createNewMemo(refreshList: refreshList);
       if (!mounted) {
         return;
       }
 
       _loadMemoIntoEditor(memo);
-      if (refreshList) {
-        await _refreshMemoList(selectId: memo.id);
-      } else {
-        setState(() {
-          _memos = [memo, ..._memos];
-          _activeMemoId = memo.id;
-        });
-      }
       _activeBodyFocus.requestFocus();
       _closeDrawerIfNeeded();
     } catch (error) {
       _showMessage(AppLocalizations.of(context)!.createFailed('$error'));
+    } finally {
+      _suppressAutoSave = false;
     }
   }
 
+  /// 文档已由 Controller 写入编辑器；此处只做历史重置、偏好记录与滚动。
   void _loadMemoIntoEditor(Memo memo, {MemoJumpTarget? jumpTarget}) {
-    _suppressAutoSave = true;
-    _titleController.text = memo.title;
-    _contentController.text = memo.content;
-    _savedTitle = memo.title;
-    _savedContent = memo.content;
-    _activeMemoId = memo.id;
-    _saveStatus = SaveStatus.saved;
-    _saveError = null;
-    _suppressAutoSave = false;
     _resetDocumentHistory();
-
-    unawaited(_sessionCache.updateLastOpenedMemoId(memo.id));
-    // ?????????????????????????
     unawaited(widget.prefsService.updateLastOpenedMemoId(memo.id));
 
     if (jumpTarget != null) {
@@ -1264,7 +731,6 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         }
       });
     } else {
-      // ???????????????????????? Overlay ????
       _scrollContentToTop();
     }
   }
@@ -1357,19 +823,12 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Memo? _memoById(String id) {
-    for (final memo in _memos) {
-      if (memo.id == id) {
-        return memo;
-      }
-    }
-    return null;
-  }
+  Memo? _memoById(String id) => _workspace.memoById(id);
 
   Future<String?> _showRenameDialog(String currentTitle) {
     return showDialog<String>(
       context: context,
-      builder: (context) => _RenameDialog(initialTitle: currentTitle),
+      builder: (context) => RenameMemoDialog(initialTitle: currentTitle),
     );
   }
 
@@ -1463,7 +922,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     _suspendEditorFocus();
     final result = await showDialog<({String url, String text})>(
       context: context,
-      builder: (context) => _LinkInsertDialog(
+      builder: (context) => LinkInsertDialog(
         initialText: initialText,
         memos: _memos,
         currentMemoId: _activeMemoId,
@@ -1546,23 +1005,16 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
 
+    _suppressAutoSave = true;
     try {
-      if (id == _activeMemoId) {
-        _suppressAutoSave = true;
-        _titleController.text = newTitle.trim();
-        _suppressAutoSave = false;
-        await _flushSave();
-      } else {
-        await _storage.renameMemo(id: id, newTitle: newTitle);
+      await _workspace.renameMemo(id: id, newTitle: newTitle);
+      if (mounted) {
+        _showMessage(l10n.renamed);
       }
-
-      await _refreshMemoList(selectId: id);
-      if (_isSearchActive) {
-        _runSearch();
-      }
-      _showMessage(l10n.renamed);
     } catch (error) {
       _showMessage(l10n.renameFailed('$error'));
+    } finally {
+      _suppressAutoSave = false;
     }
   }
 
@@ -1600,35 +1052,17 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
 
     try {
-      await _storage.deleteMemo(id);
+      final result = await _workspace.deleteMemo(id);
       if (!mounted) {
         return;
       }
 
-      if (_pinnedMemoIds.contains(id)) {
-        await _sessionCache.togglePin(id);
-        _pinnedMemoIds = List<String>.from(_sessionCache.cache.pinnedMemoIds);
-      }
-
-      final remaining = _memos.where((item) => item.id != id).toList();
-      MemoStorageService.sortMemosWithPins(remaining, _pinnedMemoIds);
-      setState(() {
-        _memos = remaining;
-        if (wasActive) {
-          _activeMemoId = null;
-        }
-      });
-
-      if (wasActive) {
-        if (remaining.isNotEmpty) {
-          await _openMemo(remaining.first.id, refreshList: false);
+      if (result.wasActive) {
+        if (result.remaining.isNotEmpty) {
+          await _openMemo(result.remaining.first.id, refreshList: false);
         } else {
           await _createNewMemo(refreshList: false);
         }
-      }
-
-      if (_isSearchActive) {
-        _runSearch();
       }
 
       _showMessage(l10n.deleted);
@@ -1637,15 +1071,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
   }
 
-  Future<void> _togglePinMemo(String id) async {
-    await _sessionCache.togglePin(id);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _pinnedMemoIds = List<String>.from(_sessionCache.cache.pinnedMemoIds);
-      MemoStorageService.sortMemosWithPins(_memos, _pinnedMemoIds);
-    });
+  Future<void> _togglePinMemo(String id) {
+    return _workspace.togglePin(id);
   }
 
   Future<void> _openSettings() async {
@@ -1762,8 +1189,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         return;
       }
 
-      final backup = DataBackupService(prefsService: widget.prefsService);
-      final result = await backup.exportToDirectory(dest);
+      final result = await _workspace.exportToDirectory(
+        prefsService: widget.prefsService,
+        destinationParent: dest,
+      );
       if (!mounted) {
         return;
       }
@@ -1809,9 +1238,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         return false;
       }
 
-      await _flushSave();
-      final backup = DataBackupService(prefsService: widget.prefsService);
-      final result = await backup.importFromDirectory(source);
+      final result = await _workspace.importFromDirectory(
+        prefsService: widget.prefsService,
+        selectedPath: source,
+      );
       if (!mounted) {
         return false;
       }
@@ -1866,7 +1296,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
     try {
-      await memoTrashService.emptyTrash();
+      await _workspace.emptyTrash();
       if (mounted) {
         _showMessage(l10n.emptyTrashSuccess);
       }
@@ -1880,7 +1310,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   Future<void> _restoreFromTrash() async {
     final l10n = AppLocalizations.of(context)!;
     try {
-      final items = await memoTrashService.listTrash();
+      final items = await _workspace.listTrash();
       if (!mounted) {
         return;
       }
@@ -1890,13 +1320,12 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       }
       final selected = await showDialog<Set<String>>(
         context: context,
-        builder: (context) => _TrashRestoreDialog(items: items),
+        builder: (context) => TrashRestoreDialog(items: items),
       );
       if (selected == null || selected.isEmpty || !mounted) {
         return;
       }
-      await memoTrashService.restore(selected.toList());
-      await _refreshMemoList(selectId: _activeMemoId);
+      await _workspace.restoreTrash(selected.toList());
       if (mounted) {
         _showMessage(l10n.restoreTrashSuccess(selected.length));
       }
@@ -1916,14 +1345,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         content: _contentController.text,
       ),
     );
-    setState(() {
-      _isInitializing = true;
-      _activeMemoId = null;
-      _memos = [];
-      _isSearchActive = false;
-      _searchResults = [];
-    });
-    _searchController.clear();
+    setState(() => _isInitializing = true);
     await _initializeWorkspace();
   }
 
@@ -2122,7 +1544,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       _publishEditCursorDebugHud();
     }
     if (mode == EditorViewMode.edit && _editSession.focusNode.hasFocus) {
-      _scheduleScrollEditCaretAboveIme();
+      _editIme.scheduleScrollCaretAboveIme();
     }
   }
 
@@ -2223,6 +1645,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         onHeading: (level) => liveState?.applyHeading(level),
         onBulletList: () => liveState?.applyBulletList(),
         onOrderedList: () => liveState?.applyOrderedList(),
+        onTaskList: () => liveState?.applyTaskList(),
         onQuote: () => liveState?.applyQuote(),
         onParagraph: () => liveState?.applyParagraph(),
         onBold: () => liveState?.applyBold(),
@@ -2260,35 +1683,46 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         (_liveSession.inputSessionActive || layoutTransition);
     // ????? viewInsets?????????????????????
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (isWide && isEditing) ...[
-            _buildMarkdownToolbar(),
-            const SizedBox(height: 8),
-          ],
-          // ????????????????/??/????????????
-          _buildViewModeTabs(l10n),
-          Expanded(
-            // Stack??????????????????????? LayoutBuilder/ListView?
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned.fill(
-                  child: isPreview
-                      ? DecoratedBox(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: outline),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: _buildPreviewPane(),
-                          ),
-                        )
-                      : isLive
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            kEditorPagePadding,
+            0,
+            kEditorPagePadding,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isWide && isEditing) ...[
+                _buildMarkdownToolbar(),
+                const SizedBox(height: 8),
+              ],
+              _buildViewModeTabs(l10n),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _toolbarImeKeyboardInset,
+                  builder: (context, toolbarInset, _) {
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        kEditorPagePadding,
+                        0,
+                        kEditorPagePadding,
+                        editorPageBottomPadding(
+                          imeToolbarVisible:
+                              !isWide && isEditing && toolbarInset > 0.5,
+                        ),
+                      ),
+                      child: isPreview
                           ? DecoratedBox(
                               decoration: BoxDecoration(
                                 border: Border.all(color: outline),
@@ -2296,57 +1730,73 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(4),
-                                child: LiveMarkdownEditor(
-                                  key: _liveEditorKey,
-                                  controller: _contentController,
-                                  focusNode: _liveSession.focusNode,
-                                  scrollController:
-                                      _liveSession.scrollController,
-                                  keyboardBottomInset:
-                                      _settledImeKeyboardInset,
-                                  toolbarKeyboardInset:
-                                      _toolbarImeKeyboardInset,
-                                  memoFilePath:
-                                      _memoById(_activeMemoId ?? '')?.filePath,
-                                  resolveLocalImage:
-                                      defaultMemoMarkdownImageResolver,
-                                  onInputStabilizing: _onLiveInputStabilizing,
-                                  onLinkTap: (href) =>
-                                      unawaited(_openMarkdownLink(href)),
-                                  resolveLinkLabel: _resolveMarkdownLinkLabel,
-                                  onUndo: () {
-                                    if (_documentHistory.canUndo) {
-                                      _undo();
-                                    }
-                                  },
-                                  onRedo: () {
-                                    if (_documentHistory.canRedo) {
-                                      _redo();
-                                    }
-                                  },
-                                ),
+                                child: _buildPreviewPane(),
                               ),
                             )
-                          : _buildContentField(),
+                          : isLive
+                              ? DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: outline),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LiveMarkdownEditor(
+                                      key: _liveEditorKey,
+                                      controller: _contentController,
+                                      focusNode: _liveSession.focusNode,
+                                      scrollController:
+                                          _liveSession.scrollController,
+                                      keyboardBottomInset:
+                                          _settledImeKeyboardInset,
+                                      toolbarKeyboardInset:
+                                          _toolbarImeKeyboardInset,
+                                      memoFilePath: _memoById(
+                                              _activeMemoId ?? '')
+                                          ?.filePath,
+                                      resolveLocalImage:
+                                          defaultMemoMarkdownImageResolver,
+                                      onInputStabilizing:
+                                          _onLiveInputStabilizing,
+                                      onLinkTap: (href) =>
+                                          unawaited(_openMarkdownLink(href)),
+                                      resolveLinkLabel:
+                                          _resolveMarkdownLinkLabel,
+                                      onUndo: () {
+                                        if (_documentHistory.canUndo) {
+                                          _undo();
+                                        }
+                                      },
+                                      onRedo: () {
+                                        if (_documentHistory.canRedo) {
+                                          _redo();
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                )
+                              : _buildContentField(),
+                    );
+                  },
                 ),
-                if (!isWide && isEditing)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _KeyboardAwareMarkdownToolbar(
-                      sessionActive: isLive
-                          ? liveInputSession
-                          : _editSession.focusNode.hasFocus,
-                      keyboardInset: _toolbarImeKeyboardInset,
-                      child: _buildMarkdownToolbar(),
-                    ),
+              ),
+              if (!isWide && isEditing)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: KeyboardAwareMarkdownToolbar(
+                    sessionActive: isLive
+                        ? liveInputSession
+                        : _editSession.focusNode.hasFocus,
+                    keyboardInset: _toolbarImeKeyboardInset,
+                    child: _buildMarkdownToolbar(),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -2388,7 +1838,9 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         hintText: l10n.untitled,
         hintStyle: titleStyle?.copyWith(
           fontWeight: FontWeight.normal,
-          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.55),
+          color: theme.colorScheme.onSurfaceVariant.withValues(
+            alpha: MdBlockChromeMetrics.hintColorAlpha,
+          ),
         ),
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
@@ -2405,17 +1857,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   Widget _buildContentField() {
     final theme = Theme.of(context);
     final bottomSafe = MediaQuery.viewPaddingOf(context).bottom;
-    // 仅用 session settle 后的 inset；勿订阅 MediaQuery.viewInsets。
-    final keyboardInset = _editSession.keyboardBottomInset;
     final isWide =
         MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
-    // 窄屏工具栏叠在键盘上方；宽屏工具栏在编辑区顶部，不占底部。
-    // IME 用视口下方 spacer（对齐实时尾部 spacer），勿塞进 contentPadding 当底遮罩。
-    final imeSpacer = editImeBottomSpacerHeight(
-      keyboardInset: keyboardInset,
-      focused: _editSession.focusNode.hasFocus,
-      includeToolbar: !isWide,
-    );
     final boxBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(4),
       borderSide: BorderSide(
@@ -2427,32 +1870,44 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     final contentBottom = editFieldContentBottomPadding(
       bottomSafe: bottomSafe,
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: TextField(
-            key: _contentFieldKey,
-            controller: _contentController,
-            focusNode: _editSession.focusNode,
-            scrollController: _editSession.scrollController,
-            decoration: InputDecoration(
-              border: boxBorder,
-              enabledBorder: boxBorder,
-              focusedBorder: boxBorder,
-              contentPadding: EdgeInsets.fromLTRB(16, 16, 16, contentBottom),
+    return ValueListenableBuilder<double>(
+      valueListenable: _editIme.keyboardBottomInset,
+      builder: (context, keyboardInset, _) {
+        // 仅用 Coordinator settle 后的 inset；勿订阅 MediaQuery.viewInsets。
+        final imeSpacer = editImeBottomSpacerHeight(
+          keyboardInset: keyboardInset,
+          focused: _editSession.focusNode.hasFocus,
+          includeToolbar: !isWide,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: TextField(
+                key: _contentFieldKey,
+                controller: _contentController,
+                focusNode: _editSession.focusNode,
+                scrollController: _editSession.scrollController,
+                decoration: InputDecoration(
+                  border: boxBorder,
+                  enabledBorder: boxBorder,
+                  focusedBorder: boxBorder,
+                  contentPadding:
+                      EdgeInsets.fromLTRB(16, 16, 16, contentBottom),
+                ),
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                keyboardType: TextInputType.multiline,
+                style: theme.textTheme.bodyLarge,
+                // spacer 已抬高视口底边；仅保留光标间隙给框架 bringIntoView。
+                scrollPadding: const EdgeInsets.only(bottom: kImeCaretGap),
+              ),
             ),
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            keyboardType: TextInputType.multiline,
-            style: theme.textTheme.bodyLarge,
-            // spacer 已抬高视口底边；仅保留光标间隙给框架 bringIntoView。
-            scrollPadding: const EdgeInsets.only(bottom: kImeCaretGap),
-          ),
-        ),
-        if (imeSpacer > 0) SizedBox(height: imeSpacer),
-      ],
+            if (imeSpacer > 0) SizedBox(height: imeSpacer),
+          ],
+        );
+      },
     );
   }
 
@@ -2511,360 +1966,6 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         bottom: false,
         child: _buildMainArea(l10n, isWide),
       ),
-    );
-  }
-}
-
-class _TrashRestoreDialog extends StatefulWidget {
-  const _TrashRestoreDialog({required this.items});
-
-  final List<TrashItem> items;
-
-  @override
-  State<_TrashRestoreDialog> createState() => _TrashRestoreDialogState();
-}
-
-class _TrashRestoreDialogState extends State<_TrashRestoreDialog> {
-  final _selected = <String>{};
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return AlertDialog(
-      title: Text(l10n.restoreTrashTitle),
-      content: SizedBox(
-        width: 360,
-        height: 360,
-        child: ListView.builder(
-          itemCount: widget.items.length,
-          itemBuilder: (context, index) {
-            final item = widget.items[index];
-            final checked = _selected.contains(item.id);
-            return CheckboxListTile(
-              value: checked,
-              onChanged: (value) {
-                setState(() {
-                  if (value == true) {
-                    _selected.add(item.id);
-                  } else {
-                    _selected.remove(item.id);
-                  }
-                });
-              },
-              title: Text(item.displayTitle(l10n.untitled)),
-              controlAffinity: ListTileControlAffinity.leading,
-            );
-          },
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _selected.isEmpty
-              ? null
-              : () => Navigator.of(context).pop(Set<String>.from(_selected)),
-          child: Text(l10n.confirm),
-        ),
-      ],
-    );
-  }
-}
-
-class _RenameDialog extends StatefulWidget {
-  const _RenameDialog({required this.initialTitle});
-
-  final String initialTitle;
-
-  @override
-  State<_RenameDialog> createState() => _RenameDialogState();
-}
-
-class _RenameDialogState extends State<_RenameDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialTitle);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() => Navigator.of(context).pop(_controller.text);
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return AlertDialog(
-      title: Text(l10n.renameTitle),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(
-          labelText: l10n.renameLabel,
-          hintText: l10n.renameHint,
-          border: const OutlineInputBorder(),
-        ),
-        textInputAction: TextInputAction.done,
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(l10n.confirm),
-        ),
-      ],
-    );
-  }
-}
-
-class _LinkInsertDialog extends StatefulWidget {
-  const _LinkInsertDialog({
-    this.initialText = '',
-    required this.memos,
-    this.currentMemoId,
-    required this.useRelativeFileHref,
-  });
-
-  final String initialText;
-  final List<Memo> memos;
-  final String? currentMemoId;
-  final bool useRelativeFileHref;
-
-  @override
-  State<_LinkInsertDialog> createState() => _LinkInsertDialogState();
-}
-
-class _LinkInsertDialogState extends State<_LinkInsertDialog> {
-  late final TextEditingController _urlController;
-  late final TextEditingController _textController;
-  late final FocusNode _urlFocusNode;
-
-  @override
-  void initState() {
-    super.initState();
-    _urlController = TextEditingController();
-    _textController = TextEditingController(text: widget.initialText);
-    _urlFocusNode = FocusNode();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _urlFocusNode.requestFocus();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _urlFocusNode.dispose();
-    _urlController.dispose();
-    _textController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    Navigator.of(context).pop((
-      url: _urlController.text,
-      text: _textController.text,
-    ));
-  }
-
-  List<Memo> get _selectableMemos {
-    final currentId = widget.currentMemoId;
-    if (currentId == null) {
-      return widget.memos;
-    }
-    return widget.memos.where((m) => m.id != currentId).toList(growable: false);
-  }
-
-  Future<void> _pickDocument() async {
-    final l10n = AppLocalizations.of(context)!;
-    final candidates = _selectableMemos;
-    if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(l10n.linkNoOtherDocuments)));
-      return;
-    }
-
-    final selected = await showModalBottomSheet<Memo>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.55;
-        return SafeArea(
-          child: SizedBox(
-            height: maxHeight,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                  child: Text(
-                    l10n.linkSelectDocumentTitle,
-                    style: Theme.of(sheetContext).textTheme.titleMedium,
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: candidates.length,
-                    itemBuilder: (context, index) {
-                      final memo = candidates[index];
-                      final title = memo.displayTitle(l10n.untitled);
-                      return ListTile(
-                        leading: const Icon(Icons.description_outlined),
-                        title: Text(title),
-                        onTap: () => Navigator.of(sheetContext).pop(memo),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (selected == null || !mounted) {
-      return;
-    }
-
-    final title = selected.displayTitle(l10n.untitled);
-    final href = MarkdownLinkActions.hrefForMemo(
-      memo: selected,
-      useRelativeFileHref: widget.useRelativeFileHref,
-      untitledLabel: l10n.untitled,
-    );
-    setState(() {
-      _urlController.text = href;
-      _textController.text = title;
-    });
-    _urlFocusNode.requestFocus();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    final urlHint = widget.useRelativeFileHref
-        ? l10n.linkUrlHintDesktop
-        : l10n.linkUrlHintMobile;
-    return AlertDialog(
-      title: Text(l10n.linkDialogTitle),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            OutlinedButton.icon(
-              onPressed: _pickDocument,
-              icon: const Icon(Icons.folder_open_outlined),
-              label: Text(l10n.linkSelectDocument),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _urlController,
-              focusNode: _urlFocusNode,
-              decoration: InputDecoration(
-                labelText: l10n.linkUrlLabel,
-                hintText: urlHint,
-                border: const OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _textController,
-              decoration: InputDecoration(
-                labelText: l10n.linkTextLabel,
-                border: const OutlineInputBorder(),
-              ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _submit(),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(l10n.confirm),
-        ),
-      ],
-    );
-  }
-}
-
-
-/// 编辑模式监听键盘 metrics，驱动光标滚出遮挡区（与实时模式同源策略）。
-class _EditKeyboardMetricsObserver with WidgetsBindingObserver {
-  _EditKeyboardMetricsObserver(this.onMetricsChanged);
-
-  final VoidCallback onMetricsChanged;
-
-  @override
-  void didChangeMetrics() => onMetricsChanged();
-}
-
-/// 窄屏底部工具栏：跟随 [_toolbarImeKeyboardInset]。
-///
-/// 展开：键盘 pending 静止后一次性写入 inset（同一次打开不爬升高度）；
-/// 收起：与正文 dismissImmediate 同拍清零。
-class _KeyboardAwareMarkdownToolbar extends StatelessWidget {
-  const _KeyboardAwareMarkdownToolbar({
-    required this.sessionActive,
-    required this.keyboardInset,
-    required this.child,
-  });
-
-  /// 输入会话是否激活（聚焦 / 实时过渡宽限等）。
-  final bool sessionActive;
-
-  /// 与正文 settle 同拍的工具栏贴齐高度（逻辑像素）。
-  final ValueListenable<double> keyboardInset;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: keyboardInset,
-      builder: (context, inset, _) {
-        if (!sessionActive || inset <= 0) {
-          return const SizedBox.shrink();
-        }
-        return Padding(
-          padding: EdgeInsets.only(bottom: inset),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 4),
-              Material(
-                elevation: 4,
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(8),
-                clipBehavior: Clip.antiAlias,
-                child: child,
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

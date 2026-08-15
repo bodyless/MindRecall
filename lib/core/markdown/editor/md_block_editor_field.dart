@@ -24,6 +24,7 @@ class MdBlockEditorField extends StatefulWidget {
     this.resolveLocalImage,
     this.onLinkTap,
     this.resolveLinkLabel,
+    this.onTaskToggle,
     this.chromeless = false,
   });
 
@@ -37,6 +38,9 @@ class MdBlockEditorField extends StatefulWidget {
   final MarkdownImageResolver? resolveLocalImage;
   final ValueChanged<String>? onLinkTap;
   final String? Function(String href)? resolveLinkLabel;
+
+  /// 实时模式勾选前缀点击（chromeless Overlay 与列表层共用）。
+  final VoidCallback? onTaskToggle;
 
   /// 实时 Overlay 模式：不重复渲染列表/引用等块级装饰，仅保留与渲染层对齐的输入框。
   final bool chromeless;
@@ -60,6 +64,7 @@ class _MdBlockEditorFieldState extends State<MdBlockEditorField> {
           resolveLocalImage: widget.resolveLocalImage,
           onLinkTap: widget.onLinkTap,
           resolveLinkLabel: widget.resolveLinkLabel,
+          onTaskToggle: widget.onTaskToggle,
           chromeless: widget.chromeless,
         );
       },
@@ -77,6 +82,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
     this.resolveLocalImage,
     this.onLinkTap,
     this.resolveLinkLabel,
+    this.onTaskToggle,
     this.chromeless = false,
   });
 
@@ -88,6 +94,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
   final MarkdownImageResolver? resolveLocalImage;
   final ValueChanged<String>? onLinkTap;
   final String? Function(String href)? resolveLinkLabel;
+  final VoidCallback? onTaskToggle;
   final bool chromeless;
 
   @override
@@ -241,6 +248,8 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
               block,
               theme.textTheme.bodyLarge,
               visible: true,
+              onTaskToggle: onTaskToggle,
+              accentColor: theme.colorScheme.primary,
             ),
             Expanded(
               child: field(
@@ -364,6 +373,8 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
           block,
           theme.textTheme.bodyLarge,
           visible: false,
+          onTaskToggle: onTaskToggle,
+          accentColor: theme.colorScheme.primary,
         ),
         Expanded(
           child: Padding(

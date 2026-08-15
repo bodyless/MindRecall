@@ -288,6 +288,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get untitled => '无标题';
 
   @override
+  String get emptyBodyHint => '点击此处输入文本';
+
+  @override
   String get deleteMemoTitle => '删除备忘录';
 
   @override
@@ -386,6 +389,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolbarOrderedList => '有序列表';
+
+  @override
+  String get toolbarTaskList => '勾选列表';
 
   @override
   String get toolbarQuote => '引用';

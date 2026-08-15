@@ -8,6 +8,10 @@ String stripBlockLinePrefix(String lineMarkdown) {
   if (heading != null) {
     return heading.group(2) ?? '';
   }
+  final task = MdSyntaxPatterns.taskLine.firstMatch(lineMarkdown);
+  if (task != null) {
+    return task.group(2) ?? '';
+  }
   if (MdSyntaxPatterns.bulletLine.hasMatch(lineMarkdown)) {
     return lineMarkdown.replaceFirst(MdSyntaxPatterns.bulletLine, '');
   }
@@ -26,6 +30,11 @@ String stripBlockLinePrefix(String lineMarkdown) {
 
 String applyBulletLineMarkdown(String lineMarkdown) =>
     '- ${stripBlockLinePrefix(lineMarkdown)}';
+
+String applyTaskLineMarkdown(String lineMarkdown) {
+  final body = stripBlockLinePrefix(lineMarkdown);
+  return body.isEmpty ? '- [ ]' : '- [ ] $body';
+}
 
 String applyOrderedLineMarkdown(
   String lineMarkdown, {
@@ -47,7 +56,12 @@ String applyParagraphLineMarkdown(String lineMarkdown) =>
 /// 由块类型与行内 markdown 拼出完整行级 markdown（数据层，不含 WYSIWYG 展示前缀）。
 String lineMarkdownForBlock(MdBlock block, String inlineMarkdown) {
   return switch (block) {
-    BulletBlock() => '- $inlineMarkdown',
+    BulletBlock(:final checked) => switch (checked) {
+        null => '- $inlineMarkdown',
+        false =>
+          inlineMarkdown.isEmpty ? '- [ ]' : '- [ ] $inlineMarkdown',
+        true => inlineMarkdown.isEmpty ? '- [x]' : '- [x] $inlineMarkdown',
+      },
     OrderedBlock() => '1. $inlineMarkdown',
     HeadingBlock(:final level) => '${'#' * level.clamp(1, 6)} $inlineMarkdown',
     QuoteBlock() => '> $inlineMarkdown',
@@ -84,7 +98,8 @@ MdBlock assignBlockId(MdBlock block, String id) {
         text: text,
         continuesWithNext: continuesWithNext,
       ),
-    BulletBlock(:final text) => BulletBlock(id: id, text: text),
+    BulletBlock(:final text, :final checked) =>
+      BulletBlock(id: id, text: text, checked: checked),
     OrderedBlock(:final marker, :final text) =>
       OrderedBlock(id: id, marker: marker, text: text),
     QuoteBlock(:final text) => QuoteBlock(id: id, text: text),

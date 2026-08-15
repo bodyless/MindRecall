@@ -93,7 +93,9 @@ class MarkdownToolbar extends StatelessWidget {
                 MarkdownEditorHelper.applyLinePrefix(
                   controller,
                   prefix: '- ',
-                  replaceExisting: RegExp(r'^[-*+]\s*'),
+                  replaceExisting: RegExp(
+                    r'^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s*)',
+                  ),
                 );
               }),
             ),
@@ -102,6 +104,13 @@ class MarkdownToolbar extends StatelessWidget {
               tooltip: l10n.toolbarOrderedList,
               onPressed: () => _apply(() {
                 MarkdownEditorHelper.applyOrderedList(controller);
+              }),
+            ),
+            _ToolbarButton(
+              icon: Icons.check_box_outline_blank,
+              tooltip: l10n.toolbarTaskList,
+              onPressed: () => _apply(() {
+                MarkdownEditorHelper.applyTaskList(controller);
               }),
             ),
             _ToolbarButton(
@@ -150,6 +159,7 @@ class LiveMarkdownToolbar extends StatelessWidget {
     required this.onHeading,
     required this.onBulletList,
     required this.onOrderedList,
+    required this.onTaskList,
     required this.onQuote,
     required this.onParagraph,
     this.onPrepareToolbarAction,
@@ -165,6 +175,7 @@ class LiveMarkdownToolbar extends StatelessWidget {
   final ValueChanged<int> onHeading;
   final VoidCallback onBulletList;
   final VoidCallback onOrderedList;
+  final VoidCallback onTaskList;
   final VoidCallback onQuote;
   final VoidCallback onParagraph;
   final VoidCallback? onPrepareToolbarAction;
@@ -254,6 +265,12 @@ class LiveMarkdownToolbar extends StatelessWidget {
               tooltip: l10n.toolbarOrderedList,
               onPrepare: onPrepareToolbarAction,
               onPressed: () => _apply(onOrderedList),
+            ),
+            _ToolbarButton(
+              icon: Icons.check_box_outline_blank,
+              tooltip: l10n.toolbarTaskList,
+              onPrepare: onPrepareToolbarAction,
+              onPressed: () => _apply(onTaskList),
             ),
             _ToolbarButton(
               icon: Icons.format_quote,

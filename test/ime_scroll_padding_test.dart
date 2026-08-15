@@ -148,6 +148,30 @@ void main() {
         isFalse,
       );
     });
+
+    test('套用缓存后 pending 低于 committed 不算收起', () {
+      expect(
+        shouldHideImeToolbarImmediately(
+          pendingLogical: 296.9,
+          committedLogical: 348.1,
+          appliedCacheThisOpen: true,
+          previousPendingLogical: 280,
+        ),
+        isFalse,
+      );
+    });
+
+    test('套用缓存后 pending 相对上一帧明显下降才收起', () {
+      expect(
+        shouldHideImeToolbarImmediately(
+          pendingLogical: 300,
+          committedLogical: 348.1,
+          appliedCacheThisOpen: true,
+          previousPendingLogical: 348.1,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('liveListImeSpacerHeight', () {
@@ -234,6 +258,19 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('toolbar bottom padding is keyboard height plus kImeToolbarKeyboardGap', () {
+      expect(
+        imeToolbarBottomPadding(keyboardInset: 348.1),
+        348.1 + kImeToolbarKeyboardGap,
+      );
+      expect(imeToolbarBottomPadding(keyboardInset: 0), 0);
+    });
+
+    test('editor page bottom padding drops when IME toolbar is visible', () {
+      expect(editorPageBottomPadding(imeToolbarVisible: false), kEditorPagePadding);
+      expect(editorPageBottomPadding(imeToolbarVisible: true), 0);
     });
 
     test('reveals only when toolbar hidden and pending positive', () {

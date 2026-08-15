@@ -146,6 +146,7 @@
   "titleOptional": "标题（可选）",
   "titleHint": "留空则使用正文首行作为标题",
   "untitled": "无标题",
+  "emptyBodyHint": "点击此处输入文本",
   "deleteMemoTitle": "删除备忘录",
   "deleteMemoConfirm": "确定删除「{title}」吗？此操作不可恢复。",
   "@deleteMemoConfirm": {
@@ -214,6 +215,7 @@
   "toolbarCode": "行内代码",
   "toolbarBulletList": "无序列表",
   "toolbarOrderedList": "有序列表",
+  "toolbarTaskList": "勾选列表",
   "toolbarQuote": "引用",
   "toolbarParagraph": "正文",
   "toolbarInsertImage": "插入图片"

@@ -608,6 +608,12 @@ abstract class AppLocalizations {
   /// **'无标题'**
   String get untitled;
 
+  /// No description provided for @emptyBodyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击此处输入文本'**
+  String get emptyBodyHint;
+
   /// No description provided for @deleteMemoTitle.
   ///
   /// In zh, this message translates to:
@@ -775,6 +781,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'有序列表'**
   String get toolbarOrderedList;
+
+  /// No description provided for @toolbarTaskList.
+  ///
+  /// In zh, this message translates to:
+  /// **'勾选列表'**
+  String get toolbarTaskList;
 
   /// No description provided for @toolbarQuote.
   ///

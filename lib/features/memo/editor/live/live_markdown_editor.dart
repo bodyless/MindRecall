@@ -11,6 +11,9 @@ import 'package:mind_recall/core/debug/ime_debug_hud.dart';
 import 'package:mind_recall/core/debug/ime_timeline.dart';
 import 'package:mind_recall/core/markdown/markdown.dart';
 import 'package:mind_recall/app_layout_constants.dart';
+import 'package:mind_recall/core/ui/ime_height_cache.dart';
+import 'package:mind_recall/core/ui/ime_metrics_observer.dart';
+import 'package:mind_recall/l10n/app_localizations.dart';
 
 /// 基于 [MdBlock] AST 的块级实时 Markdown 编辑器。
 ///
@@ -31,6 +34,7 @@ class LiveMarkdownEditor extends StatefulWidget {
     this.onRedo,
     this.onLinkTap,
     this.resolveLinkLabel,
+    this.imeHeightCache,
   });
 
   final TextEditingController controller;
@@ -54,6 +58,13 @@ class LiveMarkdownEditor extends StatefulWidget {
   final VoidCallback? onRedo;
   final ValueChanged<String>? onLinkTap;
   final String? Function(String href)? resolveLinkLabel;
+
+  /// IME 高度缓存；未传则用进程内 [defaultImeHeightCache]。
+  final ImeHeightCache? imeHeightCache;
+
+  /// 空正文点击填充层，便于单测点空白区聚焦。
+  @visibleForTesting
+  static const emptyBodyFillKey = ValueKey<String>('live-empty-body-fill');
 
   @override
   State<LiveMarkdownEditor> createState() => LiveMarkdownEditorState();
@@ -91,10 +102,16 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   Offset? _pendingActivateTapGlobal;
   /// IME 滚入每帧最多调度一次。
   bool _keyboardScrollScheduled = false;
+  /// 最近一次滚入调度原因（ensureVisible 埋点用）。
+  String? _pendingScrollReason;
   /// 键盘 metrics 收稳后最终对齐留白并滚入一次。
   Timer? _keyboardSettleTimer;
-  /// 打开时工具栏独立「静止后一次性显栏」（与正文 settle 解耦）。
-  Timer? _toolbarRevealTimer;
+  /// 无缓存时 120ms nudge 防抖；有新 settle 则重武装。
+  Timer? _nudgeDebounceTimer;
+  /// 缓存偏高时等真实 inset 静默后再降低。
+  Timer? _cacheDownCorrectTimer;
+  /// 本次打开已按缓存高度提交 spacer，避免 297 假停把 348 收回。
+  bool _appliedCacheThisOpen = false;
   bool _firstBuildTraced = false;
   /// 已提交的键盘遮挡高度；经 ValueNotifier 驱动尾部 spacer，避免整树 setState。
   late final ValueNotifier<double> _keyboardBottomInset;
@@ -104,8 +121,6 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   double _pendingKeyboardInset = 0;
   /// 启动当前 settle 计时器时的 pending；小变化不重置计时。
   double _imeSettleArmedPending = 0;
-  /// 工具栏显栏计时武装时的 pending。
-  double _toolbarRevealArmedPending = 0;
   /// 本轮 IME metrics 爆发起点（用于 Timeline burstMs）。
   int? _imeBurstStartMs;
   int _imeSettleResetCount = 0;
@@ -125,11 +140,12 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     _loadFromMarkdown(widget.controller.text, preferLastBlock: true);
   }
 
-  late final _KeyboardMetricsObserver _keyboardMetricsObserver =
-      _KeyboardMetricsObserver(_onKeyboardMetricsChanged);
+  late final ImeMetricsObserver _keyboardMetricsObserver =
+      ImeMetricsObserver(_onKeyboardMetricsChanged);
 
   void _commitKeyboardInset(double logical, {String? reason}) {
-    final changed = _keyboardBottomInset.value != logical;
+    final previous = _keyboardBottomInset.value;
+    final changed = previous != logical;
     if (changed) {
       _keyboardBottomInset.value = logical;
       imeTimelineCommit(
@@ -138,91 +154,55 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         committedLogical: logical,
         reason: reason,
       );
+      _traceVisualShift(
+        phase: 'spacerCommit',
+        reason: reason,
+        applied: true,
+        delta: logical - previous,
+      );
     }
     // 收起：工具栏与正文同拍隐藏。
     if (logical <= 0) {
       _setToolbarKeyboardInset(0);
+      _appliedCacheThisOpen = false;
+      _cancelNudgeDebounceTimer();
+      _cancelCacheDownCorrectTimer();
     }
   }
 
-  void _setToolbarKeyboardInset(double logical) {
+  void _setToolbarKeyboardInset(double logical, {String? reason}) {
     final toolbar = widget.toolbarKeyboardInset;
     if (toolbar == null || toolbar.value == logical) {
       return;
     }
+    final previous = toolbar.value;
     toolbar.value = logical;
+    _traceVisualShift(
+      phase: 'toolbarInset',
+      reason: logical <= 0 ? 'hide' : (reason ?? 'reveal'),
+      applied: true,
+      delta: logical - previous,
+    );
   }
 
   double get _toolbarInsetLogical => widget.toolbarKeyboardInset?.value ?? 0;
 
-  void _cancelToolbarRevealTimer() {
-    _toolbarRevealTimer?.cancel();
-    _toolbarRevealTimer = null;
-  }
-
-  /// 打开：pending 真正静止后一次性显栏；已显示则不再改高度。
-  void _armToolbarRevealTimer() {
-    final toolbar = widget.toolbarKeyboardInset;
-    if (toolbar == null) {
-      return;
-    }
-    if (!shouldRevealImeToolbarOnce(
-      pendingLogical: _pendingKeyboardInset,
-      toolbarLogical: toolbar.value,
+  /// 与正文 nudge 同拍显栏；已显示则仅在 raise/correct 时改高度。
+  void _syncToolbarWithCommitted({required String reason}) {
+    final target = _keyboardBottomInset.value;
+    if (!shouldSyncImeToolbarInset(
+      targetLogical: target,
+      toolbarLogical: _toolbarInsetLogical,
     )) {
-      _cancelToolbarRevealTimer();
       return;
     }
-    _toolbarRevealTimer?.cancel();
-    _toolbarRevealArmedPending = _pendingKeyboardInset;
-    _toolbarRevealTimer = Timer(kImeToolbarOpenSettleDelay, () {
-      if (!mounted || !widget.focusNode.hasFocus) {
-        return;
-      }
-      final next = _pendingKeyboardInset;
-      if (!shouldRevealImeToolbarOnce(
-        pendingLogical: next,
-        toolbarLogical: toolbar.value,
-      )) {
-        return;
-      }
-      _setToolbarKeyboardInset(next);
-      imeTimelineCommit(
-        ImeTimelineScope.toolbar,
-        pendingLogical: next,
-        committedLogical: next,
-        reason: 'revealOnce',
-      );
-      _publishImeDebugHud(
-        burstMs: DateTime.now().millisecondsSinceEpoch - (_imeBurstStartMs ?? 0),
-        focused: true,
-        lastCommitReason: 'toolbarReveal',
-      );
-    });
-  }
-
-  /// 打开过程中跟手重武装工具栏显栏计时（正文 settle 仍用 8px/48ms）。
-  void _maybeArmToolbarRevealDuringOpen() {
-    final toolbar = widget.toolbarKeyboardInset;
-    if (toolbar == null) {
-      return;
-    }
-    if (!shouldRevealImeToolbarOnce(
+    _setToolbarKeyboardInset(target, reason: reason);
+    imeTimelineCommit(
+      ImeTimelineScope.toolbar,
       pendingLogical: _pendingKeyboardInset,
-      toolbarLogical: toolbar.value,
-    )) {
-      _cancelToolbarRevealTimer();
-      return;
-    }
-    final hadActive = _toolbarRevealTimer?.isActive ?? false;
-    final restart = !hadActive ||
-        shouldRestartImeToolbarOpenSettle(
-          pendingLogical: _pendingKeyboardInset,
-          armedPendingLogical: _toolbarRevealArmedPending,
-        );
-    if (restart) {
-      _armToolbarRevealTimer();
-    }
+      committedLogical: target,
+      reason: reason,
+    );
   }
 
   /// 屏上 IME HUD（仅 debug）；[lastCommitReason] 为 null 时保留上次 reason。
@@ -239,27 +219,166 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       burstMs: burstMs,
       settleResetCount: _imeSettleResetCount,
       settleActive: (_keyboardSettleTimer?.isActive ?? false) ||
-          (_toolbarRevealTimer?.isActive ?? false),
+          (_nudgeDebounceTimer?.isActive ?? false) ||
+          (_cacheDownCorrectTimer?.isActive ?? false),
       focused: focused,
       lastCommitReason: lastCommitReason,
     );
   }
 
+  /// 可见上移埋点：spacer / ensureVisible / nudge / 工具栏各打一条，便于对照两次跳动。
+  void _traceVisualShift({
+    required String phase,
+    String? reason,
+    double? offsetBefore,
+    double? offsetAfter,
+    double? delta,
+    double? obscuredBottom,
+    bool? applied,
+  }) {
+    imeTimelineVisualShift(
+      ImeTimelineScope.live,
+      phase: phase,
+      reason: reason,
+      offsetBefore: offsetBefore,
+      offsetAfter: offsetAfter,
+      delta: delta,
+      pendingLogical: _pendingKeyboardInset,
+      committedLogical: _keyboardBottomInset.value,
+      toolbarLogical: _toolbarInsetLogical,
+      obscuredBottom: obscuredBottom,
+      applied: applied,
+    );
+  }
+
+  /// 空文档点正文框空白区：聚焦已有空段落（勿新建块）。
+  void _onEmptyBodyAreaTap() {
+    if (!isEmptyDocumentBody(_blocks)) {
+      return;
+    }
+    final id = _blocks.first.id;
+    if (_activeBlockId == id) {
+      restoreFocus();
+      return;
+    }
+    _activateBlock(id);
+  }
+
   /// settle 后单次上推（工具栏已在 commit 同拍显示，不再延后显栏）。
-  void _scheduleSettleNudge() {
+  void _scheduleSettleNudge({String? reason}) {
     if (_keyboardScrollScheduled) {
       return;
     }
     _keyboardScrollScheduled = true;
-    imeTimelineScroll(ImeTimelineScope.live, reason: 'settle');
+    imeTimelineScroll(ImeTimelineScope.live, reason: reason ?? 'settle');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _keyboardScrollScheduled = false;
       if (!mounted || !widget.focusNode.hasFocus) {
         return;
       }
       // settle 路径只用 nudge，避免 ensureVisible 再造一拍。
-      _nudgeActiveBlockAboveIme();
+      _nudgeActiveBlockAboveIme(reason: reason ?? 'settle');
     });
+  }
+
+  ImeHeightCache get _imeHeightCache =>
+      widget.imeHeightCache ?? defaultImeHeightCache;
+
+  String get _imeHeightCacheKey =>
+      imeHeightCacheKeyForView(View.of(context));
+
+  void _cancelNudgeDebounceTimer() {
+    _nudgeDebounceTimer?.cancel();
+    _nudgeDebounceTimer = null;
+  }
+
+  void _cancelCacheDownCorrectTimer() {
+    _cacheDownCorrectTimer?.cancel();
+    _cacheDownCorrectTimer = null;
+  }
+
+  void _storeCommittedImeHeight() {
+    final logical = _keyboardBottomInset.value;
+    if (logical <= 0.5) {
+      return;
+    }
+    _imeHeightCache.store(_imeHeightCacheKey, logical);
+  }
+
+  void _armDebouncedNudge() {
+    _cancelNudgeDebounceTimer();
+    _nudgeDebounceTimer = Timer(kImeNudgeDebounceDelay, () {
+      if (!mounted || !widget.focusNode.hasFocus) {
+        return;
+      }
+      _syncToolbarWithCommitted(reason: 'settleDebounced');
+      _nudgeActiveBlockAboveIme(reason: 'settleDebounced');
+      _storeCommittedImeHeight();
+    });
+  }
+
+  void _syncImeCacheDownCorrectTimer() {
+    if (!shouldArmImeCacheDownCorrect(
+      appliedCacheThisOpen: _appliedCacheThisOpen,
+      pendingLogical: _pendingKeyboardInset,
+      committedLogical: _keyboardBottomInset.value,
+    )) {
+      _cancelCacheDownCorrectTimer();
+      return;
+    }
+    _cacheDownCorrectTimer?.cancel();
+    _cacheDownCorrectTimer = Timer(kImeNudgeDebounceDelay, () {
+      if (!mounted || !widget.focusNode.hasFocus) {
+        return;
+      }
+      if (!shouldArmImeCacheDownCorrect(
+        appliedCacheThisOpen: _appliedCacheThisOpen,
+        pendingLogical: _pendingKeyboardInset,
+        committedLogical: _keyboardBottomInset.value,
+      )) {
+        return;
+      }
+      final next = _pendingKeyboardInset;
+      _commitKeyboardInset(next, reason: 'correctCacheDown');
+      _imeHeightCache.store(_imeHeightCacheKey, next);
+      _syncToolbarWithCommitted(reason: 'correctCacheDown');
+      _publishImeDebugHud(
+        burstMs: 0,
+        focused: true,
+        lastCommitReason: 'correctCacheDown',
+      );
+      if (next > 0) {
+        _scheduleSettleNudge(reason: 'correctCacheDown');
+      }
+    });
+  }
+
+  void _applyImeSettleDecision(ImeSettleDecision decision, {required int settleBurstMs}) {
+    if (decision.markCacheApplied) {
+      _appliedCacheThisOpen = true;
+    }
+    if (decision.commitLogical != null) {
+      _commitKeyboardInset(decision.commitLogical!, reason: decision.reason);
+    }
+    if (decision.storeCacheLogical != null) {
+      _imeHeightCache.store(_imeHeightCacheKey, decision.storeCacheLogical!);
+    }
+    _publishImeDebugHud(
+      burstMs: settleBurstMs,
+      focused: true,
+      lastCommitReason: decision.reason ?? 'settle',
+    );
+    switch (decision.nudge) {
+      case ImeSettleNudgeMode.immediate:
+        _cancelNudgeDebounceTimer();
+        _syncToolbarWithCommitted(reason: decision.reason ?? 'applyCache');
+        _scheduleSettleNudge(reason: decision.reason);
+      case ImeSettleNudgeMode.debounce:
+        _armDebouncedNudge();
+      case ImeSettleNudgeMode.none:
+        break;
+    }
+    _syncImeCacheDownCorrectTimer();
   }
 
   void _armImeSettleTimer({required int burstOriginMs}) {
@@ -271,9 +390,11 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       }
       final settleBurstMs =
           DateTime.now().millisecondsSinceEpoch - burstOriginMs;
-      final willCommit = shouldCommitImeInset(
+      final decision = resolveImeSettleDecision(
         pendingLogical: _pendingKeyboardInset,
         committedLogical: _keyboardBottomInset.value,
+        cachedLogical: _imeHeightCache.lookup(_imeHeightCacheKey),
+        appliedCacheThisOpen: _appliedCacheThisOpen,
       );
       imeTimelineSettle(
         ImeTimelineScope.live,
@@ -281,23 +402,13 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         committedLogical: _keyboardBottomInset.value,
         burstMs: settleBurstMs,
         settleResetCount: _imeSettleResetCount,
-        willCommit: willCommit,
+        willCommit: decision.shouldCommit,
       );
-      // 回调读最新 pending：末段小步进未重置计时时仍能吃到最终高度。
-      if (!willCommit) {
+      if (!decision.shouldCommit &&
+          decision.nudge == ImeSettleNudgeMode.none) {
         return;
       }
-      final next = _pendingKeyboardInset;
-      // 正文 settle 只改留白；工具栏由静止后 revealOnce 单独弹出。
-      _commitKeyboardInset(next, reason: 'settle');
-      _publishImeDebugHud(
-        burstMs: settleBurstMs,
-        focused: true,
-        lastCommitReason: 'settle',
-      );
-      if (next > 0) {
-        _scheduleSettleNudge();
-      }
+      _applyImeSettleDecision(decision, settleBurstMs: settleBurstMs);
     });
   }
 
@@ -313,13 +424,15 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       _imeBurstStartMs = nowMs;
       _imeSettleResetCount = 0;
     }
+    final previousPending = _pendingKeyboardInset;
     _pendingKeyboardInset = widget.focusNode.hasFocus ? inset : 0;
     final burstOriginMs = _imeBurstStartMs ?? nowMs;
     final burstMs = nowMs - burstOriginMs;
 
     if (!widget.focusNode.hasFocus) {
       _keyboardSettleTimer?.cancel();
-      _cancelToolbarRevealTimer();
+      _cancelNudgeDebounceTimer();
+      _cancelCacheDownCorrectTimer();
       // 短暂失焦且键盘仍在：保留 settled inset 给窄屏工具栏；
       // spacer 已由 _imeSessionFocused=false 归零。键盘落尽再清。
       if (inset <= 0.5) {
@@ -345,9 +458,10 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     if (shouldCommitImeDismissImmediately(
       pendingLogical: _pendingKeyboardInset,
       committedLogical: _keyboardBottomInset.value,
+      appliedCacheThisOpen: _appliedCacheThisOpen,
+      previousPendingLogical: previousPending,
     )) {
       _keyboardSettleTimer?.cancel();
-      _cancelToolbarRevealTimer();
       _commitKeyboardInset(0, reason: 'dismissImmediate');
       imeTimelineMetrics(
         ImeTimelineScope.live,
@@ -376,7 +490,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       }
       _armImeSettleTimer(burstOriginMs: burstOriginMs);
     }
-    _maybeArmToolbarRevealDuringOpen();
+    _syncImeCacheDownCorrectTimer();
 
     imeTimelineMetrics(
       ImeTimelineScope.live,
@@ -441,7 +555,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       if (!mounted) {
         return;
       }
-      _scrollActiveBlockIntoView();
+      _scrollActiveBlockIntoView(reason: 'stabilizeFocus');
       if (!widget.focusNode.canRequestFocus) {
         return;
       }
@@ -476,6 +590,8 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     }
     if (!widget.focusNode.hasFocus) {
       _keyboardSettleTimer?.cancel();
+      _cancelNudgeDebounceTimer();
+      _cancelCacheDownCorrectTimer();
       _pendingKeyboardInset = 0;
       _imeSessionFocused.value = false;
       _publishLiveCursorDebugHud();
@@ -497,11 +613,12 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       return;
     }
     _keyboardScrollScheduled = true;
+    _pendingScrollReason = reason;
     imeTimelineScroll(ImeTimelineScope.live, reason: reason);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _keyboardScrollScheduled = false;
       if (mounted && widget.focusNode.hasFocus) {
-        _scrollActiveBlockIntoView();
+        _scrollActiveBlockIntoView(reason: _pendingScrollReason);
       }
     });
   }
@@ -515,7 +632,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       );
 
   /// 将活动块滚入可视区域（考虑键盘与底部工具栏遮挡）。
-  void _scrollActiveBlockIntoView() {
+  void _scrollActiveBlockIntoView({String? reason}) {
     debugTimelineSync('Live.scrollIntoView', () {
       final activeId = _activeBlockId;
       if (activeId == null) {
@@ -540,7 +657,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         controller.jumpTo(estimated);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _scrollActiveBlockIntoView();
+            _scrollActiveBlockIntoView(reason: reason);
           }
         });
         return;
@@ -551,6 +668,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       // 键盘弹出时用瞬时滚动，避免光标（Overlay）先上移而正文仍在动画中。
       // alignment 偏上：把活动块留在未被键盘/工具栏遮住的可视区。
       final useInstant = keyboardOpen || _layoutTransitionActive;
+      final offsetBefore = controller.offset;
       Scrollable.ensureVisible(
         slotContext,
         alignment: keyboardOpen ? 0.12 : 0.35,
@@ -558,17 +676,26 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         duration: useInstant ? Duration.zero : _scrollIntoViewDuration,
         curve: Curves.easeOut,
       );
+      final offsetAfter = controller.hasClients ? controller.offset : offsetBefore;
+      _traceVisualShift(
+        phase: 'ensureVisible',
+        reason: reason,
+        offsetBefore: offsetBefore,
+        offsetAfter: offsetAfter,
+        delta: offsetAfter - offsetBefore,
+        applied: (offsetAfter - offsetBefore).abs() > 0.5,
+      );
       // ensureVisible 按完整 viewport 计算，不知底部键盘/工具栏；帧后再上推。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _nudgeActiveBlockAboveIme();
+          _nudgeActiveBlockAboveIme(reason: reason ?? 'afterEnsureVisible');
         }
       });
     });
   }
 
   /// 若活动块底边仍落在键盘/工具栏遮挡区内，继续上滚。
-  void _nudgeActiveBlockAboveIme() {
+  void _nudgeActiveBlockAboveIme({String? reason}) {
     final obscured = _focusedBottomScrollPadding;
     if (obscured <= 0) {
       return;
@@ -603,13 +730,32 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       obscuredBottom: obscured,
     );
     if (delta <= 0) {
+      _traceVisualShift(
+        phase: 'nudge',
+        reason: reason,
+        offsetBefore: controller.offset,
+        offsetAfter: controller.offset,
+        delta: 0,
+        obscuredBottom: obscured,
+        applied: false,
+      );
       return;
     }
+    final offsetBefore = controller.offset;
     controller.jumpTo(
       (controller.offset + delta).clamp(
         controller.position.minScrollExtent,
         controller.position.maxScrollExtent,
       ),
+    );
+    _traceVisualShift(
+      phase: 'nudge',
+      reason: reason,
+      offsetBefore: offsetBefore,
+      offsetAfter: controller.offset,
+      delta: delta,
+      obscuredBottom: obscured,
+      applied: true,
     );
   }
 
@@ -718,7 +864,8 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   void dispose() {
     WidgetsBinding.instance.removeObserver(_keyboardMetricsObserver);
     _keyboardSettleTimer?.cancel();
-    _cancelToolbarRevealTimer();
+    _cancelNudgeDebounceTimer();
+    _cancelCacheDownCorrectTimer();
     widget.focusNode.removeListener(_onEditorFocusChanged);
     widget.scrollController.removeListener(_onScrollForOverlayVisibility);
     flushToParent();
@@ -1470,6 +1617,10 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     _applyLineMarkdownTransform(applyBulletLineMarkdown);
   }
 
+  void applyTaskList() {
+    _applyLineMarkdownTransform(applyTaskLineMarkdown);
+  }
+
   void applyOrderedList() {
     _applyLineMarkdownTransform(applyOrderedLineMarkdown);
   }
@@ -1672,6 +1823,10 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       lineMarkdown: newLineMd,
     );
     final typeChanged = reparsed.runtimeType != block.runtimeType;
+    final taskChromeChanged = block is BulletBlock &&
+        reparsed is BulletBlock &&
+        (block.checked == null) != (reparsed.checked == null);
+    final layoutChanged = typeChanged || taskChromeChanged;
     final oldPlain = editableTextForBlock(block);
     final newPlain = editableTextForBlock(reparsed);
     _blocks[index] = reparsed;
@@ -1690,13 +1845,31 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
             : TextSelection.collapsed(offset: newPlain.length),
       );
     }
-    if (mounted && typeChanged) {
-      setState(() {});
-    } else if (reparsed is OrderedBlock) {
+    if (mounted && (layoutChanged || reparsed is OrderedBlock)) {
+      if (layoutChanged) {
+        _markLayoutTransition();
+      }
       setState(() {});
     }
     _syncToParentDeferred();
-    _stabilizeInputFocus(force: typeChanged);
+    _stabilizeInputFocus(force: layoutChanged);
+  }
+
+  /// 点击勾选前缀：只翻转 checked，不换活动块、不改选区、不收 IME。
+  void toggleTaskChecked(String blockId) {
+    final index = _indexOf(blockId);
+    if (index < 0) {
+      return;
+    }
+    final updated = toggleBulletTaskChecked(_blocks[index]);
+    if (identical(updated, _blocks[index])) {
+      return;
+    }
+    _blocks[index] = updated;
+    if (mounted) {
+      setState(() {});
+    }
+    _scheduleSyncToParent();
   }
 
   Widget _buildBlockSlot(
@@ -1713,6 +1886,13 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
           resolveLocalImage: widget.resolveLocalImage,
           onLinkTap: widget.onLinkTap,
           resolveLinkLabel: widget.resolveLinkLabel,
+          onTaskToggle: displayBlock is BulletBlock &&
+                  displayBlock.checked != null
+              ? () => toggleTaskChecked(block.id)
+              : null,
+          emptyBodyHint: isEmptyDocumentBody(_blocks)
+              ? AppLocalizations.of(context).emptyBodyHint
+              : null,
         ),
       );
     }
@@ -1829,52 +2009,81 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     final activeBlock = _activeBlock;
     final activeIndex =
         activeId == null ? -1 : _blocks.indexWhere((b) => b.id == activeId);
-    // ListView 不包在 LayoutBuilder 内，避免键盘/Drawer 约束抖动触发整表 rebuild。
-    // Overlay 单独用 LayoutBuilder 只算宽度；锚点已在 ListView padding 内，勿再加左缩进。
+    // Overlay 单独用 LayoutBuilder 只算宽度；锚点已在 padding 内，勿再加左缩进。
     // IME 留白放尾部 spacer（ValueNotifier），避免改 padding / setState 重建全部块槽。
+    // 空文档用 SliverFillRemaining 吃掉正文框剩余空白，点空白才能聚焦（Overlay 仅一行高）。
     const listPadding = EdgeInsets.fromLTRB(16, 12, 16, kEditorBodyBottomPadding);
     final bottomSafe = MediaQuery.viewPaddingOf(context).bottom;
+    final emptyBody = isEmptyDocumentBody(_blocks);
 
     return Stack(
       key: _contentStackKey,
       fit: StackFit.expand,
       clipBehavior: Clip.hardEdge,
       children: [
-        ListView.builder(
+        CustomScrollView(
           controller: widget.scrollController,
-          padding: listPadding.copyWith(
-            bottom: listPadding.bottom + bottomSafe,
-          ),
           cacheExtent: 1600,
-          itemCount: _blocks.length + 1,
-          itemBuilder: (context, i) {
-            if (i == _blocks.length) {
-              return ListenableBuilder(
-                listenable: Listenable.merge([
-                  _keyboardBottomInset,
-                  _imeSessionFocused,
-                ]),
-                builder: (context, _) {
-                  return SizedBox(
-                    height: liveListImeSpacerHeight(
-                      keyboardInset: _keyboardBottomInset.value,
-                      focused: _imeSessionFocused.value,
-                    ),
-                  );
-                },
-              );
-            }
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MdBlockStyles.bottomSpacingFor(_blocks[i]),
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                listPadding.left,
+                listPadding.top,
+                listPadding.right,
+                0,
               ),
-              child: _buildBlockSlot(
-                _blocks[i],
-                previous: i > 0 ? _blocks[i - 1] : null,
-                isActive: _blocks[i].id == activeId,
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: MdBlockStyles.bottomSpacingFor(_blocks[i]),
+                      ),
+                      child: _buildBlockSlot(
+                        _blocks[i],
+                        previous: i > 0 ? _blocks[i - 1] : null,
+                        isActive: _blocks[i].id == activeId,
+                      ),
+                    );
+                  },
+                  childCount: _blocks.length,
+                ),
               ),
-            );
-          },
+            ),
+            if (emptyBody)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: GestureDetector(
+                  key: LiveMarkdownEditor.emptyBodyFillKey,
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _onEmptyBodyAreaTap,
+                ),
+              ),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                listPadding.left,
+                0,
+                listPadding.right,
+                listPadding.bottom + bottomSafe,
+              ),
+              sliver: SliverToBoxAdapter(
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([
+                    _keyboardBottomInset,
+                    _imeSessionFocused,
+                  ]),
+                  builder: (context, _) {
+                    return SizedBox(
+                      height: liveListImeSpacerHeight(
+                        keyboardInset: _keyboardBottomInset.value,
+                        focused: _imeSessionFocused.value,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
         if (activeBlock != null && activeBlock is! ImageBlock)
           LayoutBuilder(
@@ -1920,6 +2129,10 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
                                 resolveLocalImage: widget.resolveLocalImage,
                                 onLinkTap: widget.onLinkTap,
                                 resolveLinkLabel: widget.resolveLinkLabel,
+                                onTaskToggle: activeBlock is BulletBlock &&
+                                        activeBlock.checked != null
+                                    ? () => toggleTaskChecked(activeBlock.id)
+                                    : null,
                                 chromeless: true,
                               ),
                             ),
@@ -1957,16 +2170,6 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   }
 }
 
-/// 将 [didChangeMetrics] 从 State 中拆出，避免 State 直接 mix-in 增加耦合。
-class _KeyboardMetricsObserver with WidgetsBindingObserver {
-  _KeyboardMetricsObserver(this.onMetricsChanged);
-
-  final VoidCallback onMetricsChanged;
-
-  @override
-  void didChangeMetrics() => onMetricsChanged();
-}
-
 /// 按列表内渲染层 [RenderParagraph] 实测位置绘制光标。
 ///
 /// chromeless 透明 [TextField] 与 [MdInlineText]（粗体描边、链接标题等）字形宽度
@@ -1997,12 +2200,14 @@ class _RendererSyncedCaret extends StatefulWidget {
 class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
   static const _caretWidth = 2.0;
   static const _blinkPeriod = Duration(milliseconds: 500);
+  static const _maxMeasureRetries = 8;
 
   Timer? _blinkTimer;
   bool _caretVisible = true;
   Offset? _caretTopLeft;
   double _caretHeight = 0;
   bool _measureScheduled = false;
+  int _measureRetries = 0;
 
   @override
   void initState() {
@@ -2037,6 +2242,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
   }
 
   void _onTextOrSelectionChanged() {
+    _measureRetries = 0;
     _restartBlink();
     _scheduleMeasure();
   }
@@ -2080,6 +2286,14 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
     });
   }
 
+  void _retryMeasure() {
+    if (_measureRetries >= _maxMeasureRetries) {
+      return;
+    }
+    _measureRetries++;
+    _scheduleMeasure();
+  }
+
   void _measureCaret() {
     if (!widget.focusNode.hasFocus) {
       if (_caretTopLeft != null) {
@@ -2106,6 +2320,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
         widget.overlayKey.currentContext?.findRenderObject() as RenderBox?;
     final slotContext = widget.slotKey.currentContext;
     if (overlayBox == null || !overlayBox.hasSize || slotContext == null) {
+      _retryMeasure();
       return;
     }
 
@@ -2122,10 +2337,23 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
           _caretHeight = 0;
         });
       }
+      _retryMeasure();
       return;
     }
 
     final displayText = paragraph.text.toPlainText();
+    final displayMarkdown = widget.displayMarkdownOf();
+    if (!rendererParagraphMatchesCaretPlain(
+      controllerPlain: plain,
+      paragraphPlain: displayText,
+      hasInlineFormatting: displayMarkdown != null,
+    )) {
+      // 列表层尚未跟上本次输入；再等一帧，勿用旧段落把光标钉在上一字后。
+      _retryMeasure();
+      return;
+    }
+    _measureRetries = 0;
+
     // 空块占位「 」：逻辑 offset 0 对应显示首部。
     final displayOffset = plain.isEmpty
         ? 0
@@ -2133,7 +2361,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
             plainOffset: selection.extentOffset.clamp(0, plain.length),
             plainText: plain,
             displayText: displayText,
-            displayMarkdown: widget.displayMarkdownOf(),
+            displayMarkdown: displayMarkdown,
             resolveLinkLabel: widget.resolveLinkLabel,
           );
 
@@ -2146,6 +2374,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
       TextPosition(offset: displayOffset),
     );
     if (height <= 0) {
+      _retryMeasure();
       return;
     }
 

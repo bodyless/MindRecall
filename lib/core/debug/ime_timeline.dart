@@ -98,3 +98,66 @@ void imeTimelineScroll(String scope, {String? reason}) {
     },
   );
 }
+
+/// 组装「可见上移」埋点参数（spacer / ensureVisible / nudge / 工具栏）。
+///
+/// 两次上移应对齐两条 [imeTimelineVisualShift]，用 [phase] 区分来源。
+Map<String, String> imeTimelineVisualArgs({
+  required String phase,
+  String? reason,
+  double? offsetBefore,
+  double? offsetAfter,
+  double? delta,
+  double? pendingLogical,
+  double? committedLogical,
+  double? toolbarLogical,
+  double? obscuredBottom,
+  bool? applied,
+}) {
+  String fmt(double n) => n.toStringAsFixed(1);
+  return <String, String>{
+    'phase': phase,
+    if (reason != null) 'reason': reason,
+    if (offsetBefore != null) 'off0': fmt(offsetBefore),
+    if (offsetAfter != null) 'off1': fmt(offsetAfter),
+    if (delta != null) 'delta': fmt(delta),
+    if (pendingLogical != null) 'pending': fmt(pendingLogical),
+    if (committedLogical != null) 'committed': fmt(committedLogical),
+    if (toolbarLogical != null) 'toolbar': fmt(toolbarLogical),
+    if (obscuredBottom != null) 'obscured': fmt(obscuredBottom),
+    if (applied != null) 'applied': '$applied',
+  };
+}
+
+/// 实际改变滚动偏移或 spacer/工具栏高度、会造成正文视觉上移时打一点。
+///
+/// DevTools 搜 `Ime.Live.visualShift` / `Ime.Edit.visualShift`。
+void imeTimelineVisualShift(
+  String scope, {
+  required String phase,
+  String? reason,
+  double? offsetBefore,
+  double? offsetAfter,
+  double? delta,
+  double? pendingLogical,
+  double? committedLogical,
+  double? toolbarLogical,
+  double? obscuredBottom,
+  bool? applied,
+}) {
+  debugTimelineInstant(
+    'Ime.$scope.visualShift',
+    arguments: imeTimelineVisualArgs(
+      phase: phase,
+      reason: reason,
+      offsetBefore: offsetBefore,
+      offsetAfter: offsetAfter,
+      delta: delta,
+      pendingLogical: pendingLogical,
+      committedLogical: committedLogical,
+      toolbarLogical: toolbarLogical,
+      obscuredBottom: obscuredBottom,
+      applied: applied,
+    ),
+  );
+}

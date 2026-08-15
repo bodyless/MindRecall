@@ -7,10 +7,12 @@ import 'package:mind_recall/core/debug/debug_fps_overlay.dart';
 import 'package:mind_recall/core/debug/debug_info_overlay.dart';
 import 'package:mind_recall/core/debug/debug_timeline.dart';
 import 'package:mind_recall/core/ui/keyboard_stable_media_query.dart';
+import 'package:mind_recall/core/ui/ime_height_cache.dart';
 import 'package:mind_recall/l10n/app_localizations.dart';
 
 import 'package:mind_recall/features/memo/editor/memo_editor_screen.dart';
 import 'package:mind_recall/models/user_preferences.dart';
+import 'services/ime_height_cache_store.dart';
 import 'services/user_preferences_service.dart';
 import 'theme/app_theme.dart';
 
@@ -19,6 +21,11 @@ Future<void> main() async {
 
   final prefsService = UserPreferencesService();
   await debugTimelineAsync('App.prefsLoad', prefsService.load);
+  final imeHeightCacheStore = ImeHeightCacheStore(cache: defaultImeHeightCache);
+  await debugTimelineAsync(
+    'App.imeHeightCacheLoad',
+    imeHeightCacheStore.loadAndAttach,
+  );
 
   runApp(MindRecallApp(prefsService: prefsService));
 }

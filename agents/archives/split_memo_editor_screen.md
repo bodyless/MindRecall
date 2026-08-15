@@ -1,0 +1,38 @@
+## 目标
+
+把 `memo_editor_screen.dart` 里低风险私有 Widget 与中风险工作区/编辑 IME 拆出，壳层只保留三模式切换与焦点/抽屉协调。
+
+## 整体方案
+
+先原样搬家 Dialog、贴键盘工具栏、共用 `ImeMetricsObserver`；再抽 `MemoWorkspaceController` 接管列表/保存/搜索/备份回收站；最后抽 `EditImeCoordinator` 复用已有 settle 决策。不拆 `_buildEditorContent`、`_suspendEditorFocus` 与 `LiveMarkdownEditor` 内部 IME。
+
+## 任务
+
+- [x] 新建 `lib/features/memo/editor/widgets/rename_memo_dialog.dart`，将 `memo_editor_screen.dart` 的 `_RenameDialog` / `_RenameDialogState` 改为公开 `RenameMemoDialog`（构造参数仍为 `initialTitle`）；
+- [x] 修改 `memo_editor_screen.dart` 的 `_showRenameDialog`，改为 `showDialog` 构建 `RenameMemoDialog`，并删除文件末尾原 `_RenameDialog` 类；
+- [x] 新建 `lib/features/memo/editor/widgets/trash_restore_dialog.dart`，将 `_TrashRestoreDialog` / `_TrashRestoreDialogState` 改为公开 `TrashRestoreDialog`（构造参数仍为 `items`）；
+- [x] 修改 `memo_editor_screen.dart` 的 `_restoreFromTrash`，改为 `showDialog` 构建 `TrashRestoreDialog`，并删除原 `_TrashRestoreDialog` 类；
+- [x] 新建 `lib/features/memo/editor/widgets/link_insert_dialog.dart`，将 `_LinkInsertDialog` / `_LinkInsertDialogState` 改为公开 `LinkInsertDialog`（保留 `initialText` / `memos` / `currentMemoId` / `useRelativeFileHref`）；
+- [x] 修改 `memo_editor_screen.dart` 的 `_insertMarkdownLink`，改为 `showDialog` 构建 `LinkInsertDialog`，并删除原 `_LinkInsertDialog` 类；
+- [x] 新建 `lib/features/memo/editor/widgets/keyboard_aware_markdown_toolbar.dart`，将 `_KeyboardAwareMarkdownToolbar` 改为公开 `KeyboardAwareMarkdownToolbar`（保留 `sessionActive` / `keyboardInset` / `child` 与 `imeToolbarBottomPadding`）；
+- [x] 修改 `memo_editor_screen.dart` 的 `_buildEditorContent`，窄屏工具栏改为使用 `KeyboardAwareMarkdownToolbar`，并删除原 `_KeyboardAwareMarkdownToolbar` 类；
+- [x] 新建 `lib/core/ui/ime_metrics_observer.dart`，抽出与 Live/Edit 相同的 `ImeMetricsObserver`（`WidgetsBindingObserver` + `didChangeMetrics` 回调）；
+- [x] 修改 `live_markdown_editor.dart`：删除文件末尾 `_KeyboardMetricsObserver`，将 `_keyboardMetricsObserver` 改为 `ImeMetricsObserver(_onKeyboardMetricsChanged)`；
+- [x] 修改 `memo_editor_screen.dart`：删除 `_EditKeyboardMetricsObserver`，将 `_editKeyboardMetricsObserver` 与 `_drawerImeGateObserver` 改为 `ImeMetricsObserver`；
+- [x] 新建 `lib/features/memo/editor/memo_workspace_controller.dart`，迁入 `SaveStatus` 枚举，并持有 `MemoStorageService` / `SessionCacheService` / `MemoSearchService` 与 `_memos` / `_pinnedMemoIds` / `_activeMemoId` / `_searchResults` / `_isSearchActive` / `_caseSensitive` / `_saveStatus` / `_saveError` / `_savedTitle` / `_savedContent`；
+- [x] 将 `memo_editor_screen.dart` 的 `_refreshMemoList` / `_runSearch` / `_onSearchChanged` / `_onCaseSensitiveChanged` 逻辑迁入 `MemoWorkspaceController` 对应方法（搜索仍用 300ms debounce）；
+- [x] 将 `memo_editor_screen.dart` 的 `_flushSave` / `_saveActiveMemo` / `_performSave` / `_isDirty` 迁入 `MemoWorkspaceController`，保存仍读写 Screen 传入的 title/content `TextEditingController`，禁止另建正文源；
+- [x] 将 `memo_editor_screen.dart` 的 `_openMemo` / `_createNewMemo` / `_loadMemoIntoEditor`（不含滚动跳转）/ `_renameMemo` / `_deleteMemo` / `_togglePinMemo` 迁入 `MemoWorkspaceController`；切文档仍先 `flushSave`；
+- [x] 将 `memo_editor_screen.dart` 的 `_exportData` / `_importData` / `_emptyTrash` / `_restoreFromTrash` 的数据层调用迁入 `MemoWorkspaceController`（弹窗与 `_showMessage` 仍留 Screen）；
+- [x] 修改 `memo_editor_screen.dart` 的 `_initializeWorkspace`：改为调用 `MemoWorkspaceController` 的 load（含 `session_cache` 置顶与 `listMemos`），Screen 只负责随后 `_loadMemoIntoEditor` 后的滚动/历史重置；
+- [x] 修改 `memo_editor_screen.dart` 的 `_buildFilePanel`：列表/搜索/置顶/选中/新建/重命名/删除回调改为转发 `MemoWorkspaceController`；
+- [x] 修改 `memo_editor_screen.dart` 的 `_openSettings`：导出/导入/回收站按钮改为调用 Controller 方法，Screen 只保留 `SettingsPanel` 与 `_suspendEditorFocus`；
+- [x] 新建 `test/memo_workspace_controller_test.dart`，覆盖：dirty 才保存、切文档先 flush、空搜索 query 不展示搜索空态、置顶后排序；
+- [x] 新建 `lib/features/memo/editor/edit_ime_coordinator.dart`，迁入编辑模式 IME 字段（`_editImeSettleTimer` / `_editNudgeDebounceTimer` / `_editCacheDownCorrectTimer` / `_editAppliedCacheThisOpen` / `_settledImeKeyboardInset` / `_toolbarImeKeyboardInset`）及 `_armEditImeSettleTimer` 至 `_nudgeEditCaretAboveIme` 的决策与提交；
+- [x] 确保 `EditImeCoordinator` 只调用已有 `resolveImeSettleDecision` / `shouldCommitImeDismissImmediately` / `imeHeightCacheKeyForView` / `defaultImeHeightCache`，禁止再写一套 settle 规则；
+- [x] 修改 `memo_editor_screen.dart` 的 `_onEditKeyboardMetricsChanged` / `_onEditFocusChanged` / `_clearImeInsets` / `dispose`：改为驱动 `EditImeCoordinator`，删除已迁走的私有 IME 方法；
+- [x] 修改 `memo_editor_screen.dart` 的 `_buildContentField` 与 `_buildEditorContent`：继续读取 Coordinator 的 `keyboardBottomInset` 与 `toolbarKeyboardInset` notifier，不改 spacer 公式；
+- [x] 禁止改动 `live_markdown_editor.dart` 的 settle/nudge/缓存实现（本方案仅替换 Observer）；Live 与 Edit 策略对象合并留到后续方案；
+- [x] 禁止拆分 `_buildEditorContent` 三模式 Stack、`_setViewMode`、`_suspendEditorFocus` / `_openMobileDrawer` / `_waitForImeSettled`；
+- [x] 更新 `README.md` 目录结构：补上 `memo_workspace_controller.dart`、`edit_ime_coordinator.dart`、`ime_metrics_observer.dart` 与三个 dialog / `keyboard_aware_markdown_toolbar.dart`；
+- [x] 运行 `.\scripts\run_unit_tests.ps1` 直至 PASSED；失败则只改本次拆出的代码与 `test/`，不得宣称完成；

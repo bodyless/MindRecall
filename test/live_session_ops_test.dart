@@ -19,6 +19,67 @@ void main() {
       expect(prepared.activeBlockId, prepared.blocks.first.id);
     });
 
+    test('isEmptyDocumentBody 仅单空段落', () {
+      expect(
+        isEmptyDocumentBody([ParagraphBlock(id: 'p', text: '')]),
+        isTrue,
+      );
+      expect(
+        isEmptyDocumentBody([ParagraphBlock(id: 'p', text: '  ')]),
+        isTrue,
+      );
+      expect(
+        isEmptyDocumentBody([ParagraphBlock(id: 'p', text: 'hi')]),
+        isFalse,
+      );
+      expect(
+        isEmptyDocumentBody([
+          ParagraphBlock(id: 'p', text: ''),
+          ParagraphBlock(id: 'q', text: ''),
+        ]),
+        isFalse,
+      );
+      expect(
+        isEmptyDocumentBody([BulletBlock(id: 'b', text: '')]),
+        isFalse,
+      );
+    });
+
+    test('rendererParagraphMatchesCaretPlain 识别 stale 正文', () {
+      expect(
+        rendererParagraphMatchesCaretPlain(
+          controllerPlain: 'ab',
+          paragraphPlain: 'a',
+          hasInlineFormatting: false,
+        ),
+        isFalse,
+      );
+      expect(
+        rendererParagraphMatchesCaretPlain(
+          controllerPlain: 'ab',
+          paragraphPlain: 'ab',
+          hasInlineFormatting: false,
+        ),
+        isTrue,
+      );
+      expect(
+        rendererParagraphMatchesCaretPlain(
+          controllerPlain: '',
+          paragraphPlain: ' ',
+          hasInlineFormatting: false,
+        ),
+        isTrue,
+      );
+      expect(
+        rendererParagraphMatchesCaretPlain(
+          controllerPlain: 'ab',
+          paragraphPlain: 'a',
+          hasInlineFormatting: true,
+        ),
+        isTrue,
+      );
+    });
+
     test('preferLastBlock 激活末块', () {
       final prepared = prepareLiveBlocksFromMarkdown(
         'a\n\nb',
@@ -126,6 +187,24 @@ void main() {
       expect((result.blocks[0] as BulletBlock).text, 'one');
       expect(result.blocks[1], isA<BulletBlock>());
       expect((result.blocks[1] as BulletBlock).text, 'two');
+    });
+
+    test('勾选列表 Enter 新块未勾选且当前块 checked 不变', () {
+      final blocks = [
+        const BulletBlock(id: 't1', text: 'one two', checked: true),
+      ];
+      final result = insertBlockBelowSingleLine(
+        blocks: blocks,
+        index: 0,
+        beforePlain: 'one',
+        afterPlain: 'two',
+        idGenerator: ids,
+      );
+      expect((result.blocks[0] as BulletBlock).checked, isTrue);
+      expect((result.blocks[0] as BulletBlock).text, 'one');
+      expect((result.blocks[1] as BulletBlock).checked, isFalse);
+      expect((result.blocks[1] as BulletBlock).text, 'two');
+      expect(result.blocks[1].toMarkdown(), '- [ ] two');
     });
 
     test('有序列表 Enter 后重编号', () {

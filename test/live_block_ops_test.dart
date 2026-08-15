@@ -84,6 +84,29 @@ void main() {
       expect(applyBulletLineMarkdown('hello'), '- hello');
       expect(applyBulletLineMarkdown('# Title'), '- Title');
       expect(applyBulletLineMarkdown('- old'), '- old');
+      expect(applyBulletLineMarkdown('- [ ] task'), '- task');
+    });
+
+    test('applyTaskLineMarkdown prepends unchecked task prefix', () {
+      expect(applyTaskLineMarkdown('hello'), '- [ ] hello');
+      expect(applyTaskLineMarkdown('# Title'), '- [ ] Title');
+      expect(applyTaskLineMarkdown('- old'), '- [ ] old');
+      expect(applyTaskLineMarkdown('- [x] done'), '- [ ] done');
+    });
+
+    test('stripBlockLinePrefix 去掉勾选标记', () {
+      expect(stripBlockLinePrefix('- [ ] buy'), 'buy');
+      expect(stripBlockLinePrefix('- [x] done'), 'done');
+      expect(stripBlockLinePrefix('* [X] also'), 'also');
+    });
+
+    test('applyBlockTrigger converts [ ] on a plain bullet into a task', () {
+      const block = BulletBlock(id: 'b1', text: '');
+      final triggered = applyBlockTrigger(block, '[ ] typed');
+      expect(triggered, isA<BulletBlock>());
+      expect((triggered as BulletBlock).checked, isFalse);
+      expect((triggered as BulletBlock).text, 'typed');
+      expect(triggered!.id, 'b1');
     });
 
     test('reparseBlockFromLineMarkdown parses bullet and preserves id', () {
@@ -119,6 +142,8 @@ void main() {
     test('lineMarkdownForBlock builds sibling line for list enter', () {
       const bullet = BulletBlock(id: 'b1', text: 'a');
       expect(lineMarkdownForBlock(bullet, 'next'), '- next');
+      const task = BulletBlock(id: 't1', text: 'a', checked: true);
+      expect(lineMarkdownForBlock(task, 'next'), '- [x] next');
     });
 
     test('chromelessContentPadding indents quote blocks', () {

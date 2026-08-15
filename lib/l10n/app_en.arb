@@ -120,6 +120,7 @@
   "titleOptional": "Title (optional)",
   "titleHint": "Leave empty to use the first line as title",
   "untitled": "Untitled",
+  "emptyBodyHint": "Tap here to enter text",
   "deleteMemoTitle": "Delete note",
   "deleteMemoConfirm": "Delete \"{title}\"? This cannot be undone.",
   "cancel": "Cancel",
@@ -148,6 +149,7 @@
   "toolbarCode": "Inline code",
   "toolbarBulletList": "Bullet list",
   "toolbarOrderedList": "Numbered list",
+  "toolbarTaskList": "Checklist",
   "toolbarQuote": "Quote",
   "toolbarParagraph": "Paragraph",
   "toolbarInsertImage": "Insert image"

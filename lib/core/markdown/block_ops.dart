@@ -82,6 +82,18 @@ bool isSingleLineBlock(MdBlock block) {
   };
 }
 
+/// 翻转勾选列表的 checked；非勾选块原样返回。
+MdBlock toggleBulletTaskChecked(MdBlock block) {
+  if (block is! BulletBlock || block.checked == null) {
+    return block;
+  }
+  return BulletBlock(
+    id: block.id,
+    text: block.text,
+    checked: !block.checked!,
+  );
+}
+
 /// 将含 `\n` 的 [ParagraphBlock] 拆成每视觉行一块。
 ///
 /// 实时模式按行编辑；若不拆分，编辑模式的多行段落会被整块 H2/列表误伤。

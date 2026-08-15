@@ -62,6 +62,26 @@ void main() {
       expect((result.blocks.first as ParagraphBlock).text, 'hi');
       expect(result.blocks[1], isA<BulletBlock>());
     });
+
+    test('pastes GFM task lines as checked bullets', () {
+      final ids = MdBlockIdGenerator();
+      final empty = ParagraphBlock(id: ids.next(), text: '');
+      final result = pasteMarkdownIntoBlocks(
+        blocks: [empty],
+        activeIndex: 0,
+        activeBlock: empty,
+        beforePlain: '',
+        afterPlain: '',
+        pastedMarkdown: '- [ ] a\n- [x] b',
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(2));
+      expect((result.blocks[0] as BulletBlock).checked, isFalse);
+      expect((result.blocks[0] as BulletBlock).text, 'a');
+      expect((result.blocks[1] as BulletBlock).checked, isTrue);
+      expect((result.blocks[1] as BulletBlock).text, 'b');
+      expect(serializeMdBlocks(result.blocks), '- [ ] a\n- [x] b');
+    });
   });
 
   group('visualSelectionToMarkdown', () {
@@ -69,6 +89,15 @@ void main() {
       expect(
         visualSelectionToMarkdown('•  a\n•  b'),
         '- a\n- b',
+      );
+    });
+
+    test('maps task glyphs to GFM checkboxes', () {
+      expect(
+        visualSelectionToMarkdown(
+          '${MdBlockChrome.taskUncheckedPrefix}a\n${MdBlockChrome.taskCheckedPrefix}b',
+        ),
+        '- [ ] a\n- [x] b',
       );
     });
   });

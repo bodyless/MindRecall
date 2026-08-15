@@ -2,6 +2,7 @@ import 'ast/md_block.dart';
 import 'ast/md_inline.dart';
 import 'block_ops.dart';
 import 'live_line_markdown.dart';
+import 'md_block_chrome_metrics.dart';
 import 'parser/markdown_block_parser.dart';
 
 /// 实时模式会话级纯函数：加载 / 拆块 / 单行 Enter，不依赖 Widget。
@@ -95,6 +96,13 @@ MdBlock paragraphAfterSplit(MdBlock block, String markdown) {
   final MdBlock newBlock;
   if (block is HeadingBlock) {
     newBlock = ParagraphBlock(id: idGenerator.next(), text: afterPlain);
+  } else if (block is BulletBlock && block.checked != null) {
+    // 勾选列表 Enter：新项固定未勾选，当前块 checked 不变。
+    newBlock = reparseBlockFromLineMarkdown(
+      block,
+      lineMarkdown: applyTaskLineMarkdown(afterInline),
+      id: idGenerator.next(),
+    );
   } else {
     newBlock = reparseBlockFromLineMarkdown(
       block,
@@ -118,6 +126,38 @@ MdBlock commitPlainToBlock(MdBlock block, String plainText) {
     return block;
   }
   return copyBlockInlineMarkdown(block, updatedMarkdown);
+}
+
+/// 正文是否视为空文档：仅一块且为无内容段落（不含空列表项）。
+///
+/// 此时实时模式展示灰色 hint，并让正文框空白区可点聚焦。
+bool isEmptyDocumentBody(List<MdBlock> blocks) {
+  if (blocks.length != 1) {
+    return false;
+  }
+  final block = blocks.single;
+  return block is ParagraphBlock && block.plainText.trim().isEmpty;
+}
+
+/// 列表层 [RenderParagraph] 是否已跟上活动 controller 的 plain。
+///
+/// 未跟上时按旧段落测光标会停在上一字后，直到父级 debounce 同步才动。
+/// 空块占位是透明空格。
+bool rendererParagraphMatchesCaretPlain({
+  required String controllerPlain,
+  required String paragraphPlain,
+  required bool hasInlineFormatting,
+}) {
+  if (controllerPlain.isEmpty) {
+    return paragraphPlain == MdBlockChromeMetrics.emptyBodyPlaceholder ||
+        paragraphPlain == '\u200B' ||
+        paragraphPlain.isEmpty;
+  }
+  if (hasInlineFormatting) {
+    // 行内格式下 display ≠ plain，无法用字符串相等判断 stale。
+    return true;
+  }
+  return paragraphPlain == controllerPlain;
 }
 
 /// 仅段落块可携带 [ParagraphBlock.continuesWithNext]。

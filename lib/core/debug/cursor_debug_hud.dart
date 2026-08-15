@@ -6,7 +6,11 @@ String mdBlockDebugTypeLabel(MdBlock block) {
   return switch (block) {
     HeadingBlock(:final level) => 'H$level',
     ParagraphBlock() => 'P',
-    BulletBlock() => 'ul',
+    BulletBlock(:final checked) => switch (checked) {
+        null => 'ul',
+        false => 'task',
+        true => 'task:x',
+      },
     OrderedBlock(:final marker) => 'ol:$marker',
     QuoteBlock() => 'quote',
     CodeBlock(:final language) =>

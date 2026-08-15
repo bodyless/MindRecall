@@ -253,7 +253,15 @@ Widget _selectionMirrorForBlock(ThemeData theme, MdBlock block) {
 @visibleForTesting
 String visualSelectionToMarkdown(String selected) {
   const bullet = MdBlockChrome.bulletPrefix;
+  const taskUnchecked = MdBlockChrome.taskUncheckedPrefix;
+  const taskChecked = MdBlockChrome.taskCheckedPrefix;
   return selected.split('\n').map((line) {
+    if (line.startsWith(taskChecked)) {
+      return '- [x] ${line.substring(taskChecked.length)}';
+    }
+    if (line.startsWith(taskUnchecked)) {
+      return '- [ ] ${line.substring(taskUnchecked.length)}';
+    }
     if (line.startsWith(bullet)) {
       return '- ${line.substring(bullet.length)}';
     }

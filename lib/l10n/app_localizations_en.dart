@@ -292,6 +292,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get untitled => 'Untitled';
 
   @override
+  String get emptyBodyHint => 'Tap here to enter text';
+
+  @override
   String get deleteMemoTitle => 'Delete note';
 
   @override
@@ -390,6 +393,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolbarOrderedList => 'Numbered list';
+
+  @override
+  String get toolbarTaskList => 'Checklist';
 
   @override
   String get toolbarQuote => 'Quote';

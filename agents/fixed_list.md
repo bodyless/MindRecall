@@ -8,6 +8,9 @@
 
 ## 目录
 
+- 2026-08-15 — 实时输入时光标滞后约 100ms
+- 2026-08-15 — 有序列表序号相对无序/勾选偏左
+- 2026-08-15 — 空正文框点击无光标；空文档灰色提示
 - 2026-08-14 — 窄屏半屏侧滑；门禁只认 IME inset；跨块点击落点
 - 2026-08-08 — Debug 屏上光标状态 HUD
 - 2026-08-08 — 设置面板拆为格式/数据/调试三大类
@@ -63,6 +66,24 @@
 
 ## 清单
 
+### 2026-08-15 — 实时输入时光标滞后约 100ms
+- **现象**：打几个字后，光标要过约 100ms 才跟到新字后面
+- **根因**：自定义光标按列表层 `RenderParagraph` 测；controller 已更新但列表尚未 layout 时若测一次就停，会钉在旧坐标，直到 `_syncToParent` 的 120ms debounce 触发重建
+- **修复要点**：段落 plain 未跟上 controller 时**再等一帧**测量（有重试上限）；**禁止**把 `_syncToParentDebounce` 当光标刷新；勿为赶速度改回 chromeless `showCursor: true`（会「悬」在字后空白）
+- **相关**：`live_markdown_editor.dart`（`_RendererSyncedCaret`）、`live_session_ops.dart`（`rendererParagraphMatchesCaretPlain`）、`test/live_session_ops_test.dart`
+
+### 2026-08-15 — 有序列表序号相对无序/勾选偏左
+- **现象**：`1. 2. 3.` 看起来比 `•` / 勾选图标更靠左，后两者像有缩进
+- **根因**：有序前缀是随字宽的 `1. `，无序是 `•  `，勾选是固定 `taskPrefixWidth`（24）；三者槽宽不一致
+- **修复要点**：无序/有序/勾选共用 `MdBlockChromeMetrics.listPrefixSlotWidth`；有序在槽内**右对齐**。勿只改 renderer 而漏 chromeless Overlay
+- **相关**：`md_block_chrome_metrics.dart`、`md_block_chrome.dart`、`test/md_block_chrome_test.dart`
+
+### 2026-08-15 — 空正文框点击无光标；空文档灰色提示
+- **现象**：新建文档输入标题后，点正文框空白不出光标（须标题回车或刚好点到第一行）
+- **根因**：实时 Overlay 按内容收缩高度（避免盖住下方块），空段落只有一行；ListView 空白区吞点击且无 InkWell
+- **修复要点**：`isEmptyDocumentBody`（仅单空段落）时：① 灰色 hint「点击此处输入文本」（`MdBlockChrome.hintStyle`，与标题「无标题」同透明度）；② `SliverFillRemaining` 吃剩余空白并 `requestFocus`。hint **叠在**透明空格上，勿替换占位、勿恢复「…」
+- **相关**：`live_markdown_editor.dart`、`md_block_renderer.dart`、`test/live_empty_body_hint_test.dart`
+
 ### 2026-08-14 — 窄屏半屏侧滑；门禁只认 IME inset；跨块点击落点
 - **现象**：① 左边缘仅约 48px，难侧滑；② 聚焦时侧滑会与 IME 下落叠动画；③ 若用「失焦才允许侧滑」，Android 收起键盘后常仍保留焦点/光标，侧滑继续被禁；④ 跨块点击 caret 落块末
 - **根因**：① 边缘宽写死 48；② Scaffold 在进度>0.5 才 `onDrawerChanged` 才 unfocus；③ 焦点 ≠ IME 可见；④ `_activateBlock` 写死块末
@@ -100,12 +121,13 @@
   1. **MediaQuery**：`KeyboardStableMediaQuery` 发布 `viewInsets=0`；IME 高度只走 `View` / session metrics；禁止 `viewInsetsOf` 回退
   2. **Live 留白**：`ValueNotifier` + ListView **尾部 spacer**（`liveListImeSpacerHeight`）；聚焦只改 notifier
   3. **Settle-only（正文）**：动画中不改留白；仅 `|pending-armed|≥kImeSettleRestartMinDelta(8)` 重启 `kImeInsetSettleDelay(48ms)`；回调读**最新** pending；收起 `dismissImmediate` 立刻清正文 inset
-  4. **窄屏工具栏**：打开时与正文 settle **解耦**——pending 静止（变化≥1px 重武装、`kImeToolbarOpenSettleDelay=120ms`）后 **一次性** 写入 toolbar inset；同一次打开不再改高度（禁止分帧爬升）；收起仍立刻清零；勿动画中步进显栏 / 勿跟手提前显栏
+  4. **窄屏工具栏**：与正文 **nudge 同拍**一次性写入 toolbar inset（有缓存=`applyCache` 当拍；无缓存=`settleDebounced`）。栏贴齐键盘顶（`imeToolbarBottomPadding`，**禁止**再叠 `kEditorPagePadding`）。已显示后禁止分帧爬升；仅 `raiseCache` / `correctCacheDown` 可改高度。收起立刻清零。勿动画中步进显栏 / 勿跟手提前显栏 / 勿再单独用 120ms pending 静止窗显栏
   5. **编辑留白**：`contentPadding` 仅 `kEditorBodyBottomPadding + safe`；IME 用 `editImeBottomSpacerHeight`（仅 `keyboardInset>0`）做 Column 底 spacer；有 spacer 时 nudge 勿再按满高 obscured 上推
   6. **侧栏**：suspend 时立刻 snap 清 inset 并忽略 metrics；开抽屉等 IME 上限宜短（约 180ms）
-  7. **排查**：debug Timeline `Ime.Live.*` / `Ime.Edit.*`（`burstMs` / `settleResetCount`）
-- **未决**（仍属本条，勿再拆平行条目）：工具栏弹出后正文偶发二次上推；编辑末行底遮罩体感未完全消除——继续对照上列约束排查
-- **相关**：`keyboard_stable_media_query.dart`、`ime_timeline.dart`、`app_layout_constants.dart`、`live_markdown_editor.dart`、`memo_editor_screen.dart`、`main.dart`、`test/ime_scroll_padding_test.dart`、`test/keyboard_stable_media_query_test.dart`、`test/ime_timeline_test.dart`
+  7. **排查**：debug Timeline `Ime.Live.*` / `Ime.Edit.*`（`burstMs` / `settleResetCount` / `visualShift`）
+  8. **二次上推**：无缓存时 spacer 仍 settle-only，nudge+工具栏用 `kImeNudgeDebounceDelay`(120ms) 防抖后写入 `ImeHeightCache`；有缓存时首次 settle 提交 `max(pending, cache)` 并立即 nudge+显栏（`applyCache`）。套用缓存后**禁止**把 `pending < committed` 当成收起。缓存偏高才在静默后 `correctCacheDown`。高度按视口分桶持久化到应用 support 目录 `ime_height_cache.json`（启动 `App.imeHeightCacheLoad`；**不要**写入 `user_preferences.json` / 备份）。真实高度变化时 `raiseCache` / `correctCacheDown` 改写缓存。勿为跟手动画步进 spacer。
+- **未决**（仍属本条）：编辑末行底遮罩体感未完全消除——继续对照上列约束排查
+- **相关**：`keyboard_stable_media_query.dart`、`ime_timeline.dart`、`ime_height_cache.dart`、`ime_height_cache_store.dart`、`app_layout_constants.dart`、`live_markdown_editor.dart`、`memo_editor_screen.dart`、`main.dart`、`test/ime_scroll_padding_test.dart`、`test/keyboard_stable_media_query_test.dart`、`test/ime_timeline_test.dart`、`test/ime_height_cache_test.dart`、`test/ime_height_cache_store_test.dart`
 - **历史子题**（已并入，勿再单独追加同质条目）：实时反复呼键盘卡顿；MediaQuery 整树重建；侧栏互开卡顿；动画结束顿一下；settle-only；收起立刻藏栏；settle 重置阈值；Timeline；工具栏/正文同帧与同拍；先滚再显栏；底距对齐；编辑 contentPadding→spacer；工具栏同拍 settle 分帧爬升；工具栏静止后一次性显栏
 
 ### 2026-08-01 — 实时模式反复开侧栏偶现文件列表空白

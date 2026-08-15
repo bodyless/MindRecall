@@ -69,6 +69,18 @@ void main() {
         mdBlockDebugTypeLabel(const BulletBlock(id: '1', text: 't')),
         'ul',
       );
+      expect(
+        mdBlockDebugTypeLabel(
+          const BulletBlock(id: '1', text: 't', checked: false),
+        ),
+        'task',
+      );
+      expect(
+        mdBlockDebugTypeLabel(
+          const BulletBlock(id: '1', text: 't', checked: true),
+        ),
+        'task:x',
+      );
     });
   });
 

@@ -78,5 +78,23 @@ void main() {
       expect(find.textContaining('•'), findsOneWidget);
       expect(find.text('…'), findsNothing);
     });
+
+    testWidgets('空段落可叠灰色 hint 且仍无省略号占位', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: MdBlockRenderer(
+              block: ParagraphBlock(id: 'p1', text: ''),
+              emptyBodyHint: '点击此处输入文本',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('点击此处输入文本'), findsOneWidget);
+      expect(find.text('…'), findsNothing);
+    });
   });
 }

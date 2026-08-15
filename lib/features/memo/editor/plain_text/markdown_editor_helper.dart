@@ -68,6 +68,22 @@ class MarkdownEditorHelper {
     );
   }
 
+  /// 当前行转为未勾选 GFM 任务项；去掉旧块前缀（含 `- [ ]` / `- [x]`）。
+  static void applyTaskList(TextEditingController controller) {
+    _transformSelectedLines(
+      controller,
+      (line) {
+        final stripped = line.replaceFirst(_existingBlockPrefix, '');
+        return stripped.isEmpty ? '- [ ]' : '- [ ] $stripped';
+      },
+    );
+  }
+
+  /// 标题 / 引用 / 有序 / 无序 / 勾选 行首前缀。
+  static final _existingBlockPrefix = RegExp(
+    r'^(?:#{1,6}\s+|>\s*|\d+\.\s+|[-*+]\s+\[([ xX])\]\s*|[-*+]\s+)',
+  );
+
   static void applyOrderedList(TextEditingController controller) {
     var index = 1;
     _transformSelectedLines(

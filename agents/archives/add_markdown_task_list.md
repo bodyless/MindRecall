@@ -1,0 +1,51 @@
+## 目标
+
+在编辑/实时工具栏增加与无序、有序列表互斥的勾选列表（GFM `- [ ]` / `- [x]`），实时模式点击前缀可切换勾选，预览只读显示。
+
+## 整体方案
+
+复用 `BulletBlock` 增加 `bool? checked`（`null` 为 `•`，非 `null` 为勾选），解析优先于普通 bullet；工具栏三按钮经现有换型管道互斥替换前缀；实时前缀可点切换，预览不传回调。
+
+## 任务
+
+- [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `BulletBlock` 增加可选字段 `bool? checked`（默认 `null` 表示普通无序列表）；
+- [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `BulletBlock.copyWithPlainText` 写回正文时保留原 `checked`，避免键入丢失勾选态；
+- [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `BulletBlock.toMarkdown` 按 `checked` 序列化为 `- text` / `- [ ] text` / `- [x] text`；
+- [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `MdBlock.asBulletItem` 生成 `checked: null` 的 `BulletBlock`；
+- [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `MdBlock` 新增 `asTaskItem`，生成 `checked: false` 的 `BulletBlock`；
+- [x] 在 `lib/core/markdown/parser/md_syntax_patterns.dart` 新增 `taskLine`（`[-*+]` + `[ ]`/`[x]`/`[X]`，先于 `bulletLine`）与行内 `taskBodyMarker`（`^[\[ ]`/`[x]`/`[X]`）；
+- [x] 在 `lib/core/markdown/parser/markdown_block_parser.dart` 的 `parseMarkdownBlocks` 于普通 bullet 之前匹配 `taskLine`，生成带 `checked` 的 `BulletBlock`，不解析有序任务与缩进；
+- [x] 在 `lib/core/markdown/parser/markdown_block_parser.dart` 的 `applyBlockTrigger` 增加：当前块为普通 `BulletBlock` 且 `lineText` 匹配 `taskBodyMarker` 时，按 `- $lineText` 再解析为勾选块；
+- [x] 在 `lib/core/markdown/live_line_markdown.dart` 的 `stripBlockLinePrefix` 识别 `taskLine` 并只留下勾选框后的正文；
+- [x] 在 `lib/core/markdown/live_line_markdown.dart` 新增 `applyTaskLineMarkdown`，剥前缀后写成 `- [ ] …`；
+- [x] 在 `lib/core/markdown/live_line_markdown.dart` 的 `lineMarkdownForBlock` 按 `BulletBlock.checked` 写出 `- ` 或 `- [ ]` / `- [x]`；
+- [x] 在 `lib/core/markdown/live_line_markdown.dart` 的 `assignBlockId` 复制 `BulletBlock` 时保留 `checked`；
+- [x] 在 `lib/core/markdown/live_session_ops.dart` 的 `insertBlockBelowSingleLine` 中，当前块为勾选列表时新块固定写未勾选 `- [ ]`，当前块自身 `checked` 不变；
+- [x] 在 `lib/core/markdown/block_ops.dart` 新增 `toggleBulletTaskChecked`：仅当 `checked != null` 时翻转并返回新 `BulletBlock`；
+- [x] 在 `lib/core/markdown/md_block_chrome_metrics.dart` 新增勾选前缀文案常量（未勾选/已勾选，与 `bulletPrefix` 同类的固定字符串，不用 Material `Checkbox` 的 48px 点按尺寸）；
+- [x] 在 `lib/core/markdown/renderer/md_block_chrome.dart` 的 `prefixLabel` 对勾选 `BulletBlock` 返回上述前缀文案而非 `•  `；
+- [x] 在 `lib/core/markdown/renderer/md_block_chrome.dart` 的 `buildPrefix` 增加可选 `VoidCallback? onTaskToggle`：勾选块用 `GestureDetector`（`HitTestBehavior.opaque`）包前缀；`visible: false` 时仍可点且等宽占位；无回调时只显示不可点；
+- [x] 在 `lib/core/markdown/renderer/md_block_renderer.dart` 增加可选 `onTaskToggle` 并传给正文与空块 chrome 的 `buildPrefix`；
+- [x] 在 `lib/core/markdown/editor/md_block_editor_field.dart` 增加 `onTaskToggle` 并在 chromeless `buildPrefix`（`visible: false`）传入，使活动块 Overlay 前缀可点；
+- [x] 在 `lib/core/markdown/preview/md_blocks_preview.dart` 的 `_selectionMirrorForBlock` 对勾选块使用同一 `buildPrefix`（不传 `onTaskToggle`）；
+- [x] 在 `lib/core/markdown/preview/md_blocks_preview.dart` 的 `visualSelectionToMarkdown` 将勾选前缀文案还原为 `- [ ]` / `- [x]`；
+- [x] 在 `lib/core/debug/cursor_debug_hud.dart` 的 `mdBlockDebugTypeLabel` 将勾选块标为 `task` 或 `task:x`；
+- [x] 在 `lib/features/memo/editor/live/live_markdown_editor.dart` 新增 `applyTaskList`，走 `_applyLineMarkdownTransform(applyTaskLineMarkdown)`；
+- [x] 在 `lib/features/memo/editor/live/live_markdown_editor.dart` 的 `_applyLineMarkdownTransform` 将 `BulletBlock.checked` 的 null/非 null 变化视为换型（`setState`、`_markLayoutTransition`、`_stabilizeInputFocus(force: true)`），不能只比较 `runtimeType`；
+- [x] 在 `lib/features/memo/editor/live/live_markdown_editor.dart` 新增 `toggleTaskChecked`：调用 `toggleBulletTaskChecked` 写回 `_blocks` 并 `_scheduleSyncToParent`，不切换活动块、不改选区、不收 IME；
+- [x] 在 `lib/features/memo/editor/live/live_markdown_editor.dart` 的 `_buildBlockSlot` 把 `onTaskToggle` 传给 `MdBlockRenderer`；非活动块勾选点击须拦住 `InkWell` 激活；
+- [x] 在 `lib/features/memo/editor/live/live_markdown_editor.dart` 创建活动 `MdBlockEditorField` 处传入同一 `onTaskToggle`；
+- [x] 在 `lib/features/memo/editor/plain_text/markdown_editor_helper.dart` 新增 `applyTaskList`：去掉旧块前缀（含 `- [ ]`/`- [x]`）后写成 `- [ ] `；
+- [x] 在 `lib/features/memo/editor/plain_text/markdown_editor_helper.dart` 修正无序列表 `applyLinePrefix` 的 `replaceExisting`，使点「无序」时去掉已有 `[ ]`/`[x]` 标记；
+- [x] 在 `lib/features/memo/editor/widgets/markdown_toolbar.dart` 的 `MarkdownToolbar` 于有序列表旁增加勾选按钮，调用 `MarkdownEditorHelper.applyTaskList`；
+- [x] 在 `lib/features/memo/editor/widgets/markdown_toolbar.dart` 的 `LiveMarkdownToolbar` 增加 `onTaskList` 及对应按钮（与无序/有序并存、点击即换型）；
+- [x] 在 `lib/features/memo/editor/memo_editor_screen.dart` 的 `_buildMarkdownToolbar` 将 `onTaskList` 接到 `liveState?.applyTaskList()`；
+- [x] 在 `lib/l10n/app_zh.arb` 与 `lib/l10n/app_en.arb` 新增 `toolbarTaskList`（中文「勾选列表」/英文 `Checklist`），并同步 `app_localizations.dart`、`app_localizations_zh.dart`、`app_localizations_en.dart`；
+- [x] 在 `test/markdown_block_ast_test.dart` 补解析/序列化：`- [ ]`/`- [x]`/`- [X]`、普通 `- item` 仍为 `checked == null`、有序 `1. [ ]` 不作为任务；
+- [x] 在 `test/live_block_ops_test.dart` 补 `applyTaskLineMarkdown`、`applyBlockTrigger` 对 `[ ]` 的转换，以及 `stripBlockLinePrefix` 去掉勾选标记；
+- [x] 在 `test/live_session_ops_test.dart` 补勾选块 Enter：新块为未勾选任务，当前块 `checked` 不变；
+- [x] 在 `test/live_block_ops_test.dart` 或 `test/md_block_chrome_test.dart` 补 `toggleBulletTaskChecked` 与 chrome `prefixLabel` 对勾选/普通 bullet 的区分；
+- [x] 在 `test/markdown_editor_helper_test.dart` 补 `applyTaskList` 以及无序按钮能去掉 `- [ ]`；
+- [x] 在 `test/live_paste_markdown_test.dart` 补粘贴 `- [ ]`/`- [x]` 与 `visualSelectionToMarkdown` 还原勾选前缀；
+- [x] 在 `test/cursor_debug_hud_test.dart` 补勾选块的 `mdBlockDebugTypeLabel`；
+- [x] 更新 `README.md` 功能概览工具栏、AST 表中 `BulletBlock` 的 `- [ ]`/`- [x]` 说明，以及「尚未实现」勿把勾选列表仍列为缺失；

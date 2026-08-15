@@ -44,5 +44,55 @@ void main() {
       expect(triggered, isA<HeadingBlock>());
       expect((triggered as HeadingBlock).text, 'TEST');
     });
+
+    test('asTaskItem 生成未勾选任务项', () {
+      const block = ParagraphBlock(id: 'p1', text: '买牛奶');
+      final task = block.asTaskItem() as BulletBlock;
+      expect(task.checked, isFalse);
+      expect(task.text, '买牛奶');
+      expect(task.toMarkdown(), '- [ ] 买牛奶');
+    });
+  });
+
+  group('GFM task list', () {
+    test('parses unchecked, checked, and [X] as task bullets', () {
+      const text = '- [ ] buy\n- [x] done\n- [X] also';
+      final blocks = parseMarkdownBlocks(text);
+      expect(blocks, hasLength(3));
+      expect((blocks[0] as BulletBlock).checked, isFalse);
+      expect((blocks[0] as BulletBlock).text, 'buy');
+      expect((blocks[1] as BulletBlock).checked, isTrue);
+      expect((blocks[1] as BulletBlock).text, 'done');
+      expect((blocks[2] as BulletBlock).checked, isTrue);
+      expect((blocks[2] as BulletBlock).text, 'also');
+    });
+
+    test('plain bullet stays checked == null', () {
+      final blocks = parseMarkdownBlocks('- item');
+      expect(blocks, hasLength(1));
+      expect(blocks.first, isA<BulletBlock>());
+      expect((blocks.first as BulletBlock).checked, isNull);
+      expect((blocks.first as BulletBlock).text, 'item');
+      expect(blocks.first.toMarkdown(), '- item');
+    });
+
+    test('ordered 1. [ ] is not a task', () {
+      final blocks = parseMarkdownBlocks('1. [ ] not task');
+      expect(blocks.first, isA<OrderedBlock>());
+      expect((blocks.first as OrderedBlock).text, '[ ] not task');
+    });
+
+    test('round-trips task markdown', () {
+      const text = '- [ ] a\n- [x] b';
+      final blocks = parseMarkdownBlocks(text);
+      expect(serializeMdBlocks(blocks), text);
+    });
+
+    test('copyWithPlainText 保留 checked', () {
+      const task = BulletBlock(id: 't', text: 'old', checked: true);
+      final updated = task.copyWithPlainText('new');
+      expect(updated.checked, isTrue);
+      expect(updated.text, 'new');
+    });
   });
 }

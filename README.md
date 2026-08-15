@@ -46,8 +46,8 @@
 
 ### Markdown 工具栏
 
-- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）
-- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、列表、引用、正文）+ 行内 B/I/代码；粗体等需在**有选区**时生效
+- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）；含无序 / 有序 / 勾选列表
+- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、无序/有序/勾选列表、引用、正文）+ 行内 B/I/代码；粗体等需在**有选区**时生效；勾选列表前缀可点击切换 `- [ ]` / `- [x]`（预览只读显示）
 
 ### 搜索
 
@@ -64,12 +64,14 @@
 - 宽屏（≥720px）左侧可折叠文件栏；窄屏 Drawer（左半屏 + 安全区可边缘滑动；仅系统 IME 可见时禁用侧滑，收起键盘后即使光标仍在也可侧滑）
 - 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`、回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本
 - **本地会话缓存**（`session_cache.json`，应用 support 目录）：当前打开文档、置顶列表；不可随备份迁移
+- **IME 高度缓存**（`ime_height_cache.json`，应用 support 目录）：按视口分桶记住键盘高度，重启后第一次打开即可套用；换键盘/候选栏导致高度变化时自动改写。不随备份迁移
 - 侧栏支持置顶（后置顶靠前，左上角深色角标）；非置顶项按最后修改时间降序
 - 删除有内容文档 → `MindRecall/trash/`；空文档直接删除
 - 编辑 / 实时 / 预览底边适配系统导航栏（`viewPadding.bottom`）
 - 编辑与实时模式：长文点击底部时正文上浮避开键盘（`imeBottomScrollPadding` + 主动滚入）
 - 工具栏支持插入 Markdown 链接 `[文字](url)`：可打开网页或本地文档；插入面板可「选择文档」自动填充。移动端本地链接用**文档标题**，桌面端仍可用 `./文件名.md`；解析时两种格式均支持
 - AppBar：撤销/重做（编辑区）、保存状态；标题仅用户点击后进入编辑
+- 新建空文档：正文框显示灰色「点击此处输入文本」（样式与标题「无标题」一致）；点正文空白区即可聚焦，不必点中第一行
 
 ---
 
@@ -157,11 +159,11 @@ flowchart TB
 - **标题 / 列表 / 引用**（单行块）：同样走 formatter → `insertBlockBelowSingleLine`；物理键盘另由 `Focus.onKeyEvent` 补 Enter → `_insertEmptyBlockBelow` 在下方插入空段落
 - **代码块**：允许输入原始换行，不拆块
 
-**Agent 注意**：实时编辑器使用**固定 Overlay 单例** `MdBlockEditorField`（`live-active-editor` key）+ `LayerLink`/`CompositedTransformFollower` 跟随活动块槽位；块列表为 `ListView.builder` 虚拟化。活动块仅占位布局（`Visibility.maintainSize`），**不可**按 block.id 重建 TextField，否则 Android 会失焦。标题↔列表切换时 chromeless 层始终用 `Row + Expanded` 包裹输入框，避免结构重挂载失焦。换块后若短暂失焦，父屏会调用 `restoreFocus()`。激活非活动块时须用 `onTapDown` 全局坐标经 `plainOffsetAtGlobalTap` 落点，**禁止**写死 `offset: text.length`。
+**Agent 注意**：实时编辑器使用**固定 Overlay 单例** `MdBlockEditorField`（`live-active-editor` key）+ `LayerLink`/`CompositedTransformFollower` 跟随活动块槽位；块列表为 `CustomScrollView` + `SliverList` 虚拟化。活动块仅占位布局，**不可**按 block.id 重建 TextField，否则 Android 会失焦。标题↔列表切换时 chromeless 层始终用 `Row + Expanded` 包裹输入框，避免结构重挂载失焦。换块后若短暂失焦，父屏会调用 `restoreFocus()`。激活非活动块时须用 `onTapDown` 全局坐标经 `plainOffsetAtGlobalTap` 落点，**禁止**写死 `offset: text.length`。空文档用 `SliverFillRemaining` 承接正文框空白点击（Overlay 仅一行高，点不到空白）；hint 叠在透明空格下方，勿再渲染「…」。
 
 **Agent 注意**：跨模式 SoT 只有 `_contentController`（Markdown 字符串）。正文 **Focus / Scroll / IME·工具栏 session** 分属 `EditInputSession` 与 `LiveInputSession`（`mode_input_session.dart`），**禁止**再合并成单一 `_contentFocusNode`。
 
-**Agent 注意**：列表前缀 `•  `、有序 `$marker `、引用/代码缩进须统一走 `MdBlockChrome` / `MdBlockChromeMetrics`；**禁止**在 renderer、chromeless、预览选区镜像三处各写一份 magic string/number。
+**Agent 注意**：列表前缀 `•  `、有序 `$marker `、引用/代码缩进须统一走 `MdBlockChrome` / `MdBlockChromeMetrics`；无序/有序/勾选共用 `listPrefixSlotWidth`（有序右对齐）；**禁止**在 renderer、chromeless、预览选区镜像三处各写一份 magic string/number。
 
 ---
 
@@ -176,13 +178,15 @@ lib/
 ├── branding/app_icon_painter.dart     # 应用图标 Canvas 绘制（可导出 PNG）
 ├── core/debug/
 │   ├── debug_timeline.dart            # DevTools Timeline 埋点（仅 debug）
-│   ├── ime_timeline.dart              # IME metrics/settle/commit/scroll 埋点
+│   ├── ime_timeline.dart              # IME metrics/settle/commit/scroll/visualShift 埋点
 │   ├── ime_debug_hud.dart             # 屏上 IME HUD 快照 / publish
 │   ├── cursor_debug_hud.dart          # 屏上光标 HUD 快照 / publish
 │   ├── debug_info_overlay.dart        # 左上角调试信息列表（IME / 光标为列表项）
 │   └── debug_fps_overlay.dart         # 设置「启用调试」后的 FPS 徽标
 ├── core/ui/
-│   └── keyboard_stable_media_query.dart  # 忽略键盘 viewInsets，避免 IME 动画整树重建
+│   ├── keyboard_stable_media_query.dart  # 忽略键盘 viewInsets，避免 IME 动画整树重建
+│   ├── ime_height_cache.dart          # 按视口分桶缓存 IME 高度；settle / 工具栏同拍决策
+│   └── ime_metrics_observer.dart      # Live/Edit 共用的 IME metrics Observer
 ├── core/markdown/                     # ★ Markdown 核心层（无业务依赖）
 │   ├── markdown.dart                  # barrel export
 │   ├── ast/
@@ -210,6 +214,8 @@ lib/
 │   ├── memo_markdown_image_resolver.dart  # MemoImageService → resolver 桥接
 │   ├── editor/
 │   │   ├── memo_editor_screen.dart    # 主界面：侧栏 + 三模式 + 自动保存
+│   │   ├── memo_workspace_controller.dart  # 列表 / 保存 / 搜索 / 置顶 / 备份回收站
+│   │   ├── edit_ime_coordinator.dart  # 编辑模式 IME settle / nudge / 工具栏同拍
 │   │   ├── live/
 │   │   │   └── live_markdown_editor.dart  # 实时 UI 状态机（委托 live_session_ops）
 │   │   ├── mode_input_session.dart    # 编辑/实时私有 Focus·Scroll·session
@@ -217,6 +223,10 @@ lib/
 │   │   │   └── markdown_editor_helper.dart  # 编辑模式选区包裹语法
 │   │   └── widgets/
 │   │       ├── markdown_toolbar.dart  # 编辑/实时两套工具栏
+│   │       ├── keyboard_aware_markdown_toolbar.dart  # 窄屏贴键盘工具栏
+│   │       ├── rename_memo_dialog.dart
+│   │       ├── trash_restore_dialog.dart
+│   │       ├── link_insert_dialog.dart
 │   │       └── memo_markdown_preview.dart
 │   └── sidebar/
 │       ├── memo_file_panel.dart
@@ -235,6 +245,7 @@ lib/
 │   ├── memo_search_service.dart
 │   ├── user_preferences_service.dart
 │   ├── session_cache_service.dart     # 本地会话缓存（不可迁移）
+│   ├── ime_height_cache_store.dart    # IME 高度应用缓存（support 目录，不可迁移）
 │   ├── data_backup_service.dart       # 文档 + 偏好 导出/导入
 │   ├── memo_trash_service.dart        # 回收站
 │   └── android_storage_permission.dart
@@ -250,6 +261,7 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── md_blocks_preview_test.dart
 ├── markdown_editor_helper_test.dart
 ├── memo_storage_service_test.dart
+├── memo_workspace_controller_test.dart
 ├── memo_search_service_test.dart
 ├── memo_image_service_test.dart
 ├── highlighted_text_test.dart
@@ -284,7 +296,7 @@ agents/
 |------|------|-------------------|
 | `HeadingBlock` | 1–6 级标题 | `# title` |
 | `ParagraphBlock` | 段落（可含行内 markdown） | 原文 |
-| `BulletBlock` / `OrderedBlock` | 列表 | `- item` / `1. item` |
+| `BulletBlock` / `OrderedBlock` | 列表；`BulletBlock.checked != null` 为 GFM 勾选 | `- item` / `- [ ] item` / `- [x] item` / `1. item` |
 | `QuoteBlock` | 引用 | `> text` |
 | `CodeBlock` | 围栏代码块 | ` ``` ` |
 | `ImageBlock` | 图片行 | `![alt](src)` |
@@ -413,9 +425,10 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 - 工具：`lib/core/debug/debug_timeline.dart`（仅 `kDebugMode` 生效，profile/release 零开销）
 - 屏上 FPS：设置 →「启用调试」→「显示帧率」→ `DebugFpsOverlay`；绿=流畅，红=近窗有慢帧或平均 < 50 FPS
 - 屏上调试信息列表：设置 →「启用调试」→ 子开关 → `DebugInfoOverlay`（左上角同一列表）；IME / 光标数据各为列表段（分隔线隔开）。IME：`p/c/t`、`burst`/`rst`/`settle`、`commit=`；光标：Live 块序号/类型/id 与选区前后文，Edit 文档选区/行列；`ctx «前|后»` 中 `|` 为光标
-- 事件名：`App.prefsLoad`、`Editor.*`（启动/打开文档）、`Live.*`（解析/换块/滚入/聚焦）、`Ime.*`（键盘 metrics/settle/commit/scroll）
+- 事件名：`App.prefsLoad`、`App.imeHeightCacheLoad`、`Editor.*`（启动/打开文档）、`Live.*`（解析/换块/滚入/聚焦）、`Ime.*`（键盘 metrics/settle/commit/scroll/**visualShift**）
 - 用法：`flutter run`（debug）→ DevTools Performance，按事件名对齐卡顿帧
-- IME 停顿排查：优先看屏上 HUD；或搜 `Ime.Live.` / `Ime.Edit.` / `Ime.Toolbar.`；窄屏工具栏在 pending 静止后一次性 `revealOnce`（`commit=toolbarReveal`），同一次打开不爬升高度
+- IME 停顿排查：优先看屏上 HUD；或搜 `Ime.Live.` / `Ime.Edit.` / `Ime.Toolbar.`；窄屏工具栏与正文 **nudge 同拍**显栏（有缓存 `applyCache` 当拍；无缓存 `settleDebounced`），同一次打开不爬升，仅 `raiseCache` / `correctCacheDown` 可改高度
+- IME 两次上移：无缓存时 spacer 仍 48ms settle，**nudge+工具栏 120ms 防抖**后再写入应用缓存；有缓存时首次 settle 直接套用（`applyCache`）只一拍。高度持久化在 `ime_height_cache.json`（勿写入 `user_preferences.json`）。搜 `reason`=`settleDebounced` / `applyCache` / `raiseCache` / `correctCacheDown`
 - 更深可视化：见下文「调试性能可视化」；勿在 release 打开叠加层逻辑（已由 `kDebugMode` 门控）
 
 ### 调试性能可视化（能力边界）
@@ -474,15 +487,16 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 17. 活动块光标须与 `MdInlineText` 度量对齐（透明 TextField 勿单独依赖系统光标位置）  
 18. chromeless 换块类型须固定 `Row+Expanded` 包 TextField，否则 IME 会收起  
 19. 实时模式图片：点击选中后右上角 × 删除；活动图片不挂 TextField Overlay  
-20. 空块勿渲染「…」占位；须保留透明空格/`RenderParagraph` 供光标测量  
+20. 空块勿渲染「…」占位；须保留透明空格/`RenderParagraph` 供光标测量。空**文档**可另叠灰色 hint（`emptyBodyHint`），勿用 hint 替换占位字符  
 21. 多行粘贴不可被 Enter formatter 吞掉；须 `pasteMarkdownIntoBlocks`（`•`→`-`）  
 22. 预览选区几何对齐渲染层；复制再转为 Markdown 数据  
-23. 块 chrome（`•  `/缩进）须改 `MdBlockChrome`，勿在三处各写 magic 值  
+23. 块 chrome（`•  `/缩进）须改 `MdBlockChrome`，勿在三处各写 magic 值；列表前缀槽宽走 `listPrefixSlotWidth`  
 24. 实时加载/Enter 拆块逻辑优先改 `live_session_ops.dart` 并补纯函数单测  
-25. Android IME（卡顿/跳动/留白）：终态约束见 `agents/fixed_list.md` → **2026-08-02 — Android IME：开关卡顿、跳动与留白（整合）**（`KeyboardStableMediaQuery`、Live 尾部 spacer、正文 settle-only、工具栏静止后一次性显栏、编辑 Column IME spacer；禁止 MediaQuery.of / 步进正文 UI / 工具栏分帧爬升或提前显栏 / 大块 IME 进 contentPadding）
+25. Android IME（卡顿/跳动/留白）：终态约束见 `agents/fixed_list.md` → **2026-08-02 — Android IME：开关卡顿、跳动与留白（整合）**。二次上推：无缓存 nudge+工具栏 120ms 防抖后写入应用缓存；有缓存首次 settle 套用并同拍显栏（`ime_height_cache.dart` / `ime_height_cache_store.dart`）。禁止 MediaQuery.of / 步进正文 UI / 工具栏分帧爬升或跟手显栏 / 大块 IME 进 contentPadding。
 27. 编辑/实时勿共用 FocusNode·ScrollController·hadFocus；用 `EditInputSession` / `LiveInputSession`
 28. 实时模式开抽屉：菜单按钮须等 IME inset 收起（轮询，上限宜短）且抽屉子树 `removeViewInsets(removeBottom)`；边缘侧滑区为半屏+安全区，门禁只认系统 IME inset（勿用 hasFocus/hadFocus 否决；收起键盘后可留光标仍可侧滑）；inset 阈值翻转才 setState；文件 ListView 勿 `primary: true`；宽屏侧栏揭示用动画 `onEnd` 勿裸 Timer
 29. 非活动块激活：`onTapDown` → `plainOffsetAtGlobalTap`；勿写死块末 caret
+30. 实时光标：按列表层 `RenderParagraph` 实测；若段落 plain 尚未跟上 controller，须再等一帧测量，勿把光标钉在旧字后（父级 `_syncToParent` 有 120ms debounce，不能当光标刷新）
 
 ### 撤回 / 重做
 
@@ -493,7 +507,7 @@ AppBar 的撤回/重做基于 `DocumentHistory`（`features/memo/editor/document
 - 编辑模式 WYSIWYG（当前仅源码）
 - 活动块行内编辑与光标在粗体区精确对齐（叠加层方案有 proportional font 偏差）
 - 粘贴 Markdown 智能分块
-- 表格、代码高亮等 GFM 扩展
+- 表格、代码高亮等 GFM 扩展（勾选列表 `- [ ]` / `- [x]` 已支持；有序任务与嵌套列表未做）
 
 ### 修改后必须
 

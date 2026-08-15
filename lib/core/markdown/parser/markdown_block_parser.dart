@@ -71,6 +71,19 @@ List<MdBlock> parseMarkdownBlocks(
       continue;
     }
 
+    final taskMatch = MdSyntaxPatterns.taskLine.firstMatch(line);
+    if (taskMatch != null) {
+      blocks.add(
+        BulletBlock(
+          id: ids.next(),
+          text: taskMatch.group(2) ?? '',
+          checked: MdSyntaxPatterns.taskMarkerIsChecked(taskMatch.group(1)!),
+        ),
+      );
+      index++;
+      continue;
+    }
+
     if (MdSyntaxPatterns.bulletLine.hasMatch(line)) {
       blocks.add(
         BulletBlock(
@@ -140,6 +153,15 @@ List<MdBlock> parseMarkdownBlocks(
 ///
 /// 通过「行 markdown → 解析」与工具栏块操作共用同一套解析逻辑。
 MdBlock? applyBlockTrigger(MdBlock block, String lineText) {
+  // 普通无序列表行首再输入 `[ ]` / `[x]` 时，补回 `- ` 再解析为勾选块。
+  if (block is BulletBlock &&
+      block.checked == null &&
+      MdSyntaxPatterns.taskBodyMarker.hasMatch(lineText)) {
+    return reparseBlockFromLineMarkdown(
+      block,
+      lineMarkdown: '- $lineText',
+    );
+  }
   final matchesTrigger = MdSyntaxPatterns.headingLine.hasMatch(lineText) ||
       MdSyntaxPatterns.bulletTrigger.hasMatch(lineText) ||
       MdSyntaxPatterns.orderedLine.hasMatch(lineText) ||

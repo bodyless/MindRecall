@@ -18,6 +18,8 @@ class MdBlockRenderer extends StatelessWidget {
     this.resolveLocalImage,
     this.onLinkTap,
     this.resolveLinkLabel,
+    this.onTaskToggle,
+    this.emptyBodyHint,
   });
 
   final MdBlock block;
@@ -27,6 +29,12 @@ class MdBlockRenderer extends StatelessWidget {
   final MarkdownImageResolver? resolveLocalImage;
   final ValueChanged<String>? onLinkTap;
   final String? Function(String href)? resolveLinkLabel;
+
+  /// 实时模式勾选前缀点击；预览不传。
+  final VoidCallback? onTaskToggle;
+
+  /// 仅空文档（单空段落）时显示的灰色提示；须保留透明空格供光标测量。
+  final String? emptyBodyHint;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +58,8 @@ class MdBlockRenderer extends StatelessWidget {
               block,
               theme.textTheme.bodyLarge,
               visible: true,
+              onTaskToggle: onTaskToggle,
+              accentColor: theme.colorScheme.primary,
             ),
             Expanded(
               child: MdInlineText(
@@ -134,6 +144,8 @@ class MdBlockRenderer extends StatelessWidget {
               block,
               theme.textTheme.bodyLarge,
               visible: true,
+              onTaskToggle: onTaskToggle,
+              accentColor: theme.colorScheme.primary,
             ),
             Expanded(child: bodyPlaceholder),
           ],
@@ -149,8 +161,30 @@ class MdBlockRenderer extends StatelessWidget {
           padding: MdBlockChrome.codeBlockPadding(),
           child: bodyPlaceholder,
         ),
-      _ => bodyPlaceholder,
+      _ => _emptyParagraphBody(theme, bodyPlaceholder),
     };
+  }
+
+  /// 空段落：透明空格保留几何；可选灰色 hint 叠在下方（勿替代占位字符）。
+  Widget _emptyParagraphBody(ThemeData theme, Widget bodyPlaceholder) {
+    final hint = emptyBodyHint;
+    if (hint == null || hint.isEmpty) {
+      return bodyPlaceholder;
+    }
+    final style = theme.textTheme.bodyLarge;
+    return Stack(
+      alignment: Alignment.topLeft,
+      children: [
+        IgnorePointer(
+          child: Text(
+            hint,
+            style: MdBlockChrome.hintStyle(style, theme.colorScheme),
+            strutStyle: MdBlockStyles.strutFor(style),
+          ),
+        ),
+        bodyPlaceholder,
+      ],
+    );
   }
 }
 

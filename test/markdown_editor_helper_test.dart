@@ -61,5 +61,36 @@ void main() {
       expect(controller.selection.isCollapsed, isTrue);
       expect(controller.selection.baseOffset, 5);
     });
+
+    test('applyTaskList converts the line to an unchecked task', () {
+      final controller = TextEditingController(text: 'hello');
+      controller.selection = const TextSelection.collapsed(offset: 3);
+
+      MarkdownEditorHelper.applyTaskList(controller);
+
+      expect(controller.text, '- [ ] hello');
+    });
+
+    test('applyTaskList strips existing task or bullet prefix', () {
+      final controller = TextEditingController(text: '- [x] done');
+      controller.selection = const TextSelection.collapsed(offset: 4);
+
+      MarkdownEditorHelper.applyTaskList(controller);
+
+      expect(controller.text, '- [ ] done');
+    });
+
+    test('applyLinePrefix bullet removes existing task marker', () {
+      final controller = TextEditingController(text: '- [ ] hello');
+      controller.selection = const TextSelection.collapsed(offset: 6);
+
+      MarkdownEditorHelper.applyLinePrefix(
+        controller,
+        prefix: '- ',
+        replaceExisting: RegExp(r'^(?:[-*+]\s+\[[ xX]\]\s*|[-*+]\s*)'),
+      );
+
+      expect(controller.text, '- hello');
+    });
   });
 }

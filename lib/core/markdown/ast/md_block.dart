@@ -21,6 +21,10 @@ sealed class MdBlock {
 
   MdBlock asBulletItem() => BulletBlock(id: id, text: plainText);
 
+  /// 转为未勾选的 GFM 任务项（`- [ ]`）。
+  MdBlock asTaskItem() =>
+      BulletBlock(id: id, text: plainText, checked: false);
+
   MdBlock asOrderedItem({String marker = '1.'}) =>
       OrderedBlock(id: id, marker: marker, text: plainText);
 
@@ -91,18 +95,34 @@ final class BulletBlock extends MdBlock {
   const BulletBlock({
     required super.id,
     required this.text,
+    this.checked,
   });
 
   final String text;
+
+  /// `null` 为普通无序列表；非 `null` 为 GFM 勾选列表。
+  final bool? checked;
+
+  bool get isTask => checked != null;
 
   @override
   String get plainText => text;
 
   @override
-  BulletBlock copyWithPlainText(String text) => BulletBlock(id: id, text: text);
+  BulletBlock copyWithPlainText(String text) =>
+      BulletBlock(id: id, text: text, checked: checked);
 
   @override
-  String toMarkdown() => '- $text';
+  String toMarkdown() {
+    if (checked == null) {
+      return '- $text';
+    }
+    final mark = checked! ? 'x' : ' ';
+    if (text.isEmpty) {
+      return '- [$mark]';
+    }
+    return '- [$mark] $text';
+  }
 }
 
 final class OrderedBlock extends MdBlock {
