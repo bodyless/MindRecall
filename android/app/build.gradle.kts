@@ -1,9 +1,15 @@
+import com.android.build.gradle.api.ApkVariantOutput
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+/** 产物文件名前缀：`mind_recall_<versionName>_<debug|release>.apk` */
+val apkArtifactBaseName = "mind_recall"
 
 android {
     namespace = "com.wishtech.mind_recall"
@@ -41,4 +47,29 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// 自定义分发用文件名。`flutter install` / `flutter run` 仍写死查找
+// `app-<debug|profile|release>.apk`，必须在 flutter-apk 目录保留该别名。
+android.applicationVariants.configureEach {
+    val variant = this
+    val buildTypeName = variant.buildType.name
+    val apkFileName = "${apkArtifactBaseName}_${variant.versionName}_${buildTypeName}.apk"
+    val flutterCliApkName = "app-$buildTypeName.apk"
+    @Suppress("DEPRECATION")
+    outputs.configureEach {
+        (this as ApkVariantOutput).outputFileName = apkFileName
+    }
+    assembleProvider.configure {
+        doLast {
+            val packagedDir = variant.packageApplicationProvider.get().outputDirectory.get().asFile
+            val src = File(packagedDir, apkFileName)
+            val destDir = layout.buildDirectory.get().asFile.resolve("outputs/flutter-apk")
+            if (src.isFile) {
+                destDir.mkdirs()
+                src.copyTo(File(destDir, apkFileName), overwrite = true)
+                src.copyTo(File(destDir, flutterCliApkName), overwrite = true)
+            }
+        }
+    }
 }

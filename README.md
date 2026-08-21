@@ -12,6 +12,7 @@
 |---|---|
 | 包名 | `mind_recall` |
 | Android `applicationId` | `com.wishtech.mind_recall` |
+| Android APK 文件名 | 分发用 `mind_recall_<versionName>_<debug\|release>.apk`；`flutter install` 仍读同目录 `app-release.apk`（内容相同，Flutter CLI 写死此名） |
 | 显示名称 | 回念笔记（`lib/app_config.dart` → `kAppDisplayName`） |
 | Dart SDK | `^3.10.3` |
 | UI | Material 3，浅色/深色主题，中/英 i18n |
@@ -268,6 +269,7 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── memo_workspace_controller_test.dart
 ├── process_text_capture_test.dart
 ├── android_process_text_manifest_test.dart
+├── android_apk_output_name_test.dart
 ├── memo_search_service_test.dart
 ├── memo_image_service_test.dart
 ├── highlighted_text_test.dart

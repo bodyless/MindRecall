@@ -8,6 +8,7 @@
 
 ## 目录
 
+- 2026-08-21 — flutter install 找不到 app-release.apk
 - 2026-08-21 — 导入备份后图片丢失
 - 2026-08-21 — Android 导入备份 Permission denied
 - 2026-08-21 — 水滴打字后隐藏；编辑模式偏 1–2px
@@ -66,6 +67,12 @@
 ---
 
 ## 清单
+
+### 2026-08-21 — flutter install 找不到 app-release.apk
+- **现象**：自定义 APK 名为 `mind_recall_<version>_<debug/release>.apk` 后，`flutter install` 仍访问 `build/app/outputs/flutter-apk/app-release.apk` 并失败
+- **根因**：Flutter CLI / gradle 插件写死产物名为 `app-<mode>.apk`。改 `outputFileName` 后插件未必再复制该别名，flutter-apk 目录只剩自定义名
+- **修复要点**：assemble 后同时写出分发名和 `app-<buildType>.apk`。**禁止**只改 Gradle 输出名而不保留 Flutter CLI 别名
+- **相关**：`android/app/build.gradle.kts`、`test/android_apk_output_name_test.dart`
 
 ### 2026-08-21 — 导入备份后图片丢失
 - **现象**：备份导入后文档在，`{id}_assets/` 里的图片空白
