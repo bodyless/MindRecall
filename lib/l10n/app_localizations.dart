@@ -794,6 +794,12 @@ abstract class AppLocalizations {
   /// **'引用'**
   String get toolbarQuote;
 
+  /// No description provided for @toolbarThematicBreak.
+  ///
+  /// In zh, this message translates to:
+  /// **'分割线'**
+  String get toolbarThematicBreak;
+
   /// No description provided for @toolbarParagraph.
   ///
   /// In zh, this message translates to:

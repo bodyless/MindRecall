@@ -71,6 +71,12 @@ List<MdBlock> parseMarkdownBlocks(
       continue;
     }
 
+    if (MdSyntaxPatterns.thematicBreakLine.hasMatch(line)) {
+      blocks.add(ThematicBreakBlock(id: ids.next()));
+      index++;
+      continue;
+    }
+
     final taskMatch = MdSyntaxPatterns.taskLine.firstMatch(line);
     if (taskMatch != null) {
       blocks.add(
@@ -128,6 +134,7 @@ List<MdBlock> parseMarkdownBlocks(
           next.startsWith('>') ||
           next.startsWith('```') ||
           MdSyntaxPatterns.imageLine.hasMatch(next.trim()) ||
+          MdSyntaxPatterns.thematicBreakLine.hasMatch(next) ||
           MdSyntaxPatterns.bulletLine.hasMatch(next) ||
           RegExp(r'^\d+\.\s+').hasMatch(next)) {
         break;
@@ -165,6 +172,7 @@ MdBlock? applyBlockTrigger(MdBlock block, String lineText) {
   final matchesTrigger = MdSyntaxPatterns.headingLine.hasMatch(lineText) ||
       MdSyntaxPatterns.bulletTrigger.hasMatch(lineText) ||
       MdSyntaxPatterns.orderedLine.hasMatch(lineText) ||
+      MdSyntaxPatterns.thematicBreakLine.hasMatch(lineText) ||
       lineText.startsWith('> ');
   if (!matchesTrigger) {
     return null;

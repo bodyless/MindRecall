@@ -92,5 +92,14 @@ void main() {
 
       expect(controller.text, '- hello');
     });
+
+    test('insertThematicBreak inserts snippet at caret', () {
+      final controller = TextEditingController(text: 'ab');
+      controller.selection = const TextSelection.collapsed(offset: 1);
+
+      MarkdownEditorHelper.insertThematicBreak(controller);
+
+      expect(controller.text, 'a\n---\nb');
+    });
   });
 }

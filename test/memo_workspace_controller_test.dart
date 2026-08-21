@@ -7,6 +7,7 @@ import 'package:mind_recall/models/memo.dart';
 class _FakeStore implements MemoWorkspaceStore {
   final Map<String, Memo> memos = {};
   int updateCount = 0;
+  int createCount = 0;
 
   Memo put({
     required String id,
@@ -40,6 +41,7 @@ class _FakeStore implements MemoWorkspaceStore {
 
   @override
   Future<Memo> createMemo() async {
+    createCount++;
     return put(
       id: 'new-${memos.length}',
       updatedAt: DateTime(2026, 1, 1),
@@ -228,5 +230,44 @@ void main() {
 
     expect(workspace.pinnedMemoIds, ['older']);
     expect(workspace.memos.map((m) => m.id).toList(), ['older', 'newer']);
+  });
+
+  test('活动笔记为空时 captureTextAsMemo 只更新正文', () async {
+    final empty = store.put(
+      id: 'empty',
+      updatedAt: DateTime(2026, 1, 1),
+    );
+    workspace.memos = [empty];
+    workspace.applyMemoToEditors(empty);
+
+    final captured = await workspace.captureTextAsMemo('选区正文');
+
+    expect(store.createCount, 0);
+    expect(store.memos.length, 1);
+    expect(captured.id, 'empty');
+    expect(captured.title, '');
+    expect(captured.content, '选区正文');
+    expect(content.text, '选区正文');
+    expect(title.text, '');
+  });
+
+  test('已有非空活动笔记时 captureTextAsMemo 会新建', () async {
+    final existing = store.put(
+      id: 'a',
+      title: '已有',
+      content: '旧正文',
+      updatedAt: DateTime(2026, 1, 2),
+    );
+    workspace.memos = [existing];
+    workspace.applyMemoToEditors(existing);
+
+    final captured = await workspace.captureTextAsMemo('新选区');
+
+    expect(store.createCount, 1);
+    expect(store.memos.length, 2);
+    expect(captured.id, isNot('a'));
+    expect(captured.title, '');
+    expect(captured.content, '新选区');
+    expect(store.memos['a']?.content, '旧正文');
   });
 }

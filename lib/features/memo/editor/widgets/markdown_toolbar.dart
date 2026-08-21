@@ -124,6 +124,13 @@ class MarkdownToolbar extends StatelessWidget {
                 );
               }),
             ),
+            _ToolbarButton(
+              icon: Icons.horizontal_rule,
+              tooltip: l10n.toolbarThematicBreak,
+              onPressed: () => _apply(() {
+                MarkdownEditorHelper.insertThematicBreak(controller);
+              }),
+            ),
             if (onInsertImage != null || onInsertLink != null) ...[
               const _ToolbarDivider(),
               if (onInsertLink != null)
@@ -161,6 +168,7 @@ class LiveMarkdownToolbar extends StatelessWidget {
     required this.onOrderedList,
     required this.onTaskList,
     required this.onQuote,
+    required this.onInsertThematicBreak,
     required this.onParagraph,
     this.onPrepareToolbarAction,
     this.onPrepareInlineAction,
@@ -177,6 +185,7 @@ class LiveMarkdownToolbar extends StatelessWidget {
   final VoidCallback onOrderedList;
   final VoidCallback onTaskList;
   final VoidCallback onQuote;
+  final VoidCallback onInsertThematicBreak;
   final VoidCallback onParagraph;
   final VoidCallback? onPrepareToolbarAction;
   final VoidCallback? onPrepareInlineAction;
@@ -277,6 +286,12 @@ class LiveMarkdownToolbar extends StatelessWidget {
               tooltip: l10n.toolbarQuote,
               onPrepare: onPrepareToolbarAction,
               onPressed: () => _apply(onQuote),
+            ),
+            _ToolbarButton(
+              icon: Icons.horizontal_rule,
+              tooltip: l10n.toolbarThematicBreak,
+              onPrepare: onPrepareToolbarAction,
+              onPressed: () => _apply(onInsertThematicBreak),
             ),
             _ToolbarButton(
               icon: Icons.notes,

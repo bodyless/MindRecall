@@ -110,6 +110,13 @@ class MarkdownEditorHelper {
     );
   }
 
+  static const _thematicBreakSnippet = '\n---\n';
+
+  /// 在光标处插入 Markdown 分割线。
+  static void insertThematicBreak(TextEditingController controller) {
+    insertAtCursor(controller, _thematicBreakSnippet);
+  }
+
   /// 插入或包裹 Markdown 链接 `[text](url)`。
   static void applyLink(
     TextEditingController controller, {

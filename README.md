@@ -46,8 +46,8 @@
 
 ### Markdown 工具栏
 
-- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）；含无序 / 有序 / 勾选列表
-- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、无序/有序/勾选列表、引用、正文）+ 行内 B/I/代码；粗体等需在**有选区**时生效；勾选列表前缀可点击切换 `- [ ]` / `- [x]`（预览只读显示）
+- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）；含无序 / 有序 / 勾选列表、分割线
+- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、无序/有序/勾选列表、引用、分割线、正文）+ 行内 B/I/代码；粗体等需在**有选区**时生效；勾选列表前缀可点击切换 `- [ ]` / `- [x]`（预览只读显示）；分割线与图片同为原子块（无 TextField，点选后 × 删除）
 
 ### 搜索
 
@@ -68,10 +68,11 @@
 - 侧栏支持置顶（后置顶靠前，左上角深色角标）；非置顶项按最后修改时间降序
 - 删除有内容文档 → `MindRecall/trash/`；空文档直接删除
 - 编辑 / 实时 / 预览底边适配系统导航栏（`viewPadding.bottom`）
-- 编辑与实时模式：长文点击底部时正文上浮避开键盘（`imeBottomScrollPadding` + 主动滚入）
+- 编辑与实时模式：长文点击底部或同一块连续打字软换行时正文上浮避开键盘（`imeBottomScrollPadding` + 主动滚入 / 换行 nudge）
 - 工具栏支持插入 Markdown 链接 `[文字](url)`：可打开网页或本地文档；插入面板可「选择文档」自动填充。移动端本地链接用**文档标题**，桌面端仍可用 `./文件名.md`；解析时两种格式均支持
 - AppBar：撤销/重做（编辑区）、保存状态；标题仅用户点击后进入编辑
 - 新建空文档：正文框显示灰色「点击此处输入文本」（样式与标题「无标题」一致）；点正文空白区即可聚焦，不必点中第一行
+- **Android 选区菜单「记录到笔记」**：其它 App 选中文本后经透明 trampoline 转入本 App 任务栈（冷/热启动均可）；不改写源 App 文本，也不把 Flutter 主界面嵌进对方任务
 
 ---
 
@@ -197,7 +198,7 @@ lib/
 │   │   └── md_syntax_patterns.dart    # 块级正则（parser 与 trigger 共用）
 │   ├── block_ops.dart                 # editableTextForBlock / 粘贴 / 删块等
 │   ├── live_session_ops.dart          # 实时加载/拆块/单行 Enter（纯函数）
-│   ├── live_block_tap_ops.dart        # 非活动块点击 → plain caret 映射
+│   ├── live_block_tap_ops.dart        # 非活动块点击 → plain caret；正文段落/文末 affinity
 │   ├── live_line_markdown.dart        # 单行块 line markdown 重解析
 │   ├── md_block_chrome_metrics.dart   # chrome 常量（无 Flutter 依赖）
 │   ├── renderer/
@@ -248,7 +249,9 @@ lib/
 │   ├── ime_height_cache_store.dart    # IME 高度应用缓存（support 目录，不可迁移）
 │   ├── data_backup_service.dart       # 文档 + 偏好 导出/导入
 │   ├── memo_trash_service.dart        # 回收站
-│   └── android_storage_permission.dart
+│   ├── android_storage_permission.dart
+│   ├── process_text_capture.dart      # 选区文本规范化 / 是否复用空篇
+│   └── android_process_text.dart      # Android PROCESS_TEXT EventChannel
 └── l10n/                              # gen-l10n，arb: app_zh / app_en
 
 test/                              # 单元测试根目录（不参与 App 打包）
@@ -258,10 +261,13 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── live_session_ops_test.dart
 ├── live_block_ops_test.dart
 ├── live_block_tap_ops_test.dart
+├── live_caret_handle_test.dart
 ├── md_blocks_preview_test.dart
 ├── markdown_editor_helper_test.dart
 ├── memo_storage_service_test.dart
 ├── memo_workspace_controller_test.dart
+├── process_text_capture_test.dart
+├── android_process_text_manifest_test.dart
 ├── memo_search_service_test.dart
 ├── memo_image_service_test.dart
 ├── highlighted_text_test.dart
@@ -275,13 +281,13 @@ scripts/
 .cursor/
 ├── rules/                         # Agent 持久规则
 └── skills/
-    ├── mode-explore/SKILL.md      # 只读探索模式（禁止增删改文件）
-    ├── mode-propose/SKILL.md      # 只写 agents/proposes（目标/整体方案/任务勾选）
-    ├── mode-implement/SKILL.md    # 按方案改工程目录；每完成一项勾选
-    └── mode-archive/SKILL.md      # 将完成的方案移到 agents/archives
+    ├── mode-explore/SKILL.md      # 只读探索；交接事实与分叉，不写方案
+    ├── mode-propose/SKILL.md      # 只写 proposes/<name>/{schemes,tasks}.md
+    ├── mode-implement/SKILL.md    # 未决为空才落实；按步骤勾选
+    └── mode-archive/SKILL.md      # 将完成的方案目录移到 agents/archives
 
 agents/
-├── proposes/                      # 待落实方案 .md（按需生成）
+├── proposes/                      # 待落实方案：<name>/schemes.md + tasks.md
 ├── archives/                      # 已完成方案归档（按需生成）
 └── fixed_list.md                  # 已修复 Bug 台账
 ```
@@ -300,6 +306,9 @@ agents/
 | `QuoteBlock` | 引用 | `> text` |
 | `CodeBlock` | 围栏代码块 | ` ``` ` |
 | `ImageBlock` | 图片行 | `![alt](src)` |
+| `ThematicBreakBlock` | 分割线 | `---`（读入 `***` / `___` 后亦写成 `---`） |
+
+`MdBlock.supportsPlainEditing`：实时是否用 TextField 编辑块体。图片与分割线为 `false`（原子块：点选 + × 删除，不挂 Overlay）；标题/段落/列表/引用/代码为 `true`。
 
 解析：`parseMarkdownBlocks()` in `core/markdown/parser/markdown_block_parser.dart`  
 序列化：`serializeMdBlocks()` in `core/markdown/ast/md_block.dart`  
@@ -415,10 +424,10 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 
 ### 工作流模式
 
-- **mode-explore**（`.cursor/skills/mode-explore/SKILL.md`）：显式启用后只读探索，只允许读文件与跟用户互动；**禁止**对仓库做任何增删改。若用户尝试修改，提示使用 **mode-propose**。
-- **mode-propose**（`.cursor/skills/mode-propose/SKILL.md`）：将探索上下文写成 `agents/proposes/` 下的方案（栏目：目标 / 整体方案 / 任务勾选列表）；**只允许改该目录**。若用户要求改工程目录，提示使用 **mode-implement**。
-- **mode-implement**（`.cursor/skills/mode-implement/SKILL.md`）：扫描 `agents/proposes/`，默认一次落实一个方案到工程目录；多个方案时先询问要实现哪一个；**每完成一项任务即勾选**。
-- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应文件从 `agents/proposes/` 移到 `agents/archives/`（目录不存在则新建）。
+- **mode-explore**（`.cursor/skills/mode-explore/SKILL.md`）：显式启用后只读探索，只允许读文件与跟用户互动；**禁止**对仓库做任何增删改。若用户尝试修改，提示使用 **mode-propose**。交接只给可被另一会话消费的事实（同类模式路径、调用链、不确定点与行为分叉），不写方案文件。
+- **mode-propose**（`.cursor/skills/mode-propose/SKILL.md`）：只写 `agents/proposes/<name>/schemes.md`（目标 / 方案 / 已决事项 / 关注点 / 未决事项）与 `tasks.md`（按步骤分组的勾选列表）。设计阶段把行为分叉交给用户拍板；**未决非空不得宣称可落实**。同一目标不够落地时修订该目录。若用户要求改工程目录且合同已闭合，提示使用 **mode-implement**。
+- **mode-implement**（`.cursor/skills/mode-implement/SKILL.md`）：扫描 `agents/proposes/`，默认一次落实一个已闭合方案；先读已决与关注点，再按 `tasks.md` 步骤勾选。接线可做，合同外选择与未决事项视为停手，打回 **mode-propose**，禁止推翻已决或用领域常识补行为。
+- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应**目录**（或遗留单文件）从 `agents/proposes/` 移到 `agents/archives/`。
 
 ### 性能 Timeline 埋点
 
@@ -480,11 +489,11 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 10. 最后一行是 H1/H2/H3 时须能 Enter 新建段落（单行块 → `_insertEmptyBlockBelow`）  
 11. `BoldInline` 渲染须设 `fontWeight`；勿用会改变字形宽度的 `letterSpacing` 假粗体  
 12. 插入链接对话框前须 `_suspendEditorFocus()`，否则实时模式会把 IME 抢回编辑框  
-13. 长文档点底部：实时用 `ensureVisible`+nudge；编辑模式同样须 `bringIntoView`+`scrollDeltaToClearIme`（勿只靠 scrollPadding）  
+13. 长文档点底部：实时用 `ensureVisible`+nudge；同一块连续打字软换行也须 `shouldNudgeImeAfterContentWrap` 再 nudge（勿只在点击/聚焦时上浮）。编辑模式同样须 `bringIntoView`+`scrollDeltaToClearIme`（勿只靠 scrollPadding）  
 14. 行内解析：`***` 须 `_isWrapped` 校验，否则可能 RangeError  
 15. 实时 Overlay：活动块滚出可视区时须隐藏 Follower（并 `Clip.hardEdge`）  
 16. 实时模式全选只能覆盖当前块；全文选择请用编辑/预览模式  
-17. 活动块光标须与 `MdInlineText` 度量对齐（透明 TextField 勿单独依赖系统光标位置）  
+17. 活动块光标须与 `MdInlineText` 度量对齐（透明 TextField 勿单独依赖系统光标/折叠水滴位置）。系统折叠手柄关掉后须按渲染层光标**自绘**水滴，勿直接移除。水滴应对准光标中线（`kTextCaretWidth/2`），打字后隐藏、点选再显示（对齐编辑模式）。文末测光标用 `TextAffinity.upstream`，找段落须跳过列表 chrome 前缀  
 18. chromeless 换块类型须固定 `Row+Expanded` 包 TextField，否则 IME 会收起  
 19. 实时模式图片：点击选中后右上角 × 删除；活动图片不挂 TextField Overlay  
 20. 空块勿渲染「…」占位；须保留透明空格/`RenderParagraph` 供光标测量。空**文档**可另叠灰色 hint（`emptyBodyHint`），勿用 hint 替换占位字符  
@@ -497,6 +506,7 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 28. 实时模式开抽屉：菜单按钮须等 IME inset 收起（轮询，上限宜短）且抽屉子树 `removeViewInsets(removeBottom)`；边缘侧滑区为半屏+安全区，门禁只认系统 IME inset（勿用 hasFocus/hadFocus 否决；收起键盘后可留光标仍可侧滑）；inset 阈值翻转才 setState；文件 ListView 勿 `primary: true`；宽屏侧栏揭示用动画 `onEnd` 勿裸 Timer
 29. 非活动块激活：`onTapDown` → `plainOffsetAtGlobalTap`；勿写死块末 caret
 30. 实时光标：按列表层 `RenderParagraph` 实测；若段落 plain 尚未跟上 controller，须再等一帧测量，勿把光标钉在旧字后（父级 `_syncToParent` 有 120ms debounce，不能当光标刷新）
+31. Android「记录到笔记」：`PROCESS_TEXT` 必须用 `ProcessTextActivity` trampoline（`NEW_TASK` 打开 `MainActivity` 后立刻 `finish`/`RESULT_CANCELED`）。**禁止** `activity-alias` 到 Flutter `MainActivity`，否则源 App 黑屏卡住
 
 ### 撤回 / 重做
 

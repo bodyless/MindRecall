@@ -233,4 +233,88 @@ void main() {
       expect(identical(toggleBulletTaskChecked(bullet), bullet), isTrue);
     });
   });
+
+  group('atomic delete button placement', () {
+    const image = ImageBlock(id: 'i', alt: '', src: './a.png');
+    const hr = ThematicBreakBlock(id: 'hr');
+
+    test('图片 × 的 top 不低于图内容顶边', () {
+      expect(MdBlockStyles.atomicDeleteAlignCenterVertically(image), isFalse);
+      final top = MdBlockStyles.atomicDeleteButtonTop(image);
+      final imageContentTop = MdBlockStyles.slotPadding.top +
+          MdBlockStyles.imageContentVerticalPadding;
+      expect(top, imageContentTop + MdBlockStyles.atomicDeleteButtonInset);
+      expect(top >= imageContentTop, isTrue);
+    });
+
+    test('分割线 × 走垂直居中', () {
+      expect(MdBlockStyles.atomicDeleteAlignCenterVertically(hr), isTrue);
+    });
+
+    testWidgets('positionAtomicDeleteButton 分割线 top/bottom 拉满并 Center',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: [
+              MdBlockStyles.positionAtomicDeleteButton(
+                block: hr,
+                button: const SizedBox(key: Key('btn'), width: 10, height: 10),
+              ),
+            ],
+          ),
+        ),
+      );
+      final positioned = tester.widget<Positioned>(find.byType(Positioned));
+      expect(positioned.top, 0);
+      expect(positioned.bottom, 0);
+      expect(find.byType(Center), findsOneWidget);
+    });
+
+    testWidgets('positionAtomicDeleteButton 图片用内缩 top 不拉满', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            children: [
+              MdBlockStyles.positionAtomicDeleteButton(
+                block: image,
+                button: const SizedBox(key: Key('btn'), width: 10, height: 10),
+              ),
+            ],
+          ),
+        ),
+      );
+      final positioned = tester.widget<Positioned>(find.byType(Positioned));
+      expect(positioned.top, MdBlockStyles.atomicDeleteButtonTop(image));
+      expect(positioned.bottom, isNull);
+    });
+
+    testWidgets('buildAtomicDeleteButton 正方形圆底且 X 行高为 1', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: MdBlockStyles.buildAtomicDeleteButton(onPressed: () {}),
+          ),
+        ),
+      );
+      expect(
+        tester.getSize(find.byType(Material)),
+        const Size(
+          MdBlockStyles.atomicDeleteButtonExtent,
+          MdBlockStyles.atomicDeleteButtonExtent,
+        ),
+      );
+      expect(find.byType(Icon), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(Material),
+          matching: find.byType(Transform),
+        ),
+        findsOneWidget,
+      );
+      final text = tester.widget<Text>(find.byType(Text));
+      expect(text.style?.height, 1);
+      expect(text.strutStyle?.forceStrutHeight, isTrue);
+    });
+  });
 }

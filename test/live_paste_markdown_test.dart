@@ -82,6 +82,23 @@ void main() {
       expect((result.blocks[1] as BulletBlock).text, 'b');
       expect(serializeMdBlocks(result.blocks), '- [ ] a\n- [x] b');
     });
+
+    test('pastes thematic break as its own block', () {
+      final ids = MdBlockIdGenerator();
+      final empty = ParagraphBlock(id: ids.next(), text: '');
+      final result = pasteMarkdownIntoBlocks(
+        blocks: [empty],
+        activeIndex: 0,
+        activeBlock: empty,
+        beforePlain: '',
+        afterPlain: '',
+        pastedMarkdown: 'a\n---\nb',
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(3));
+      expect(result.blocks[1], isA<ThematicBreakBlock>());
+      expect(serializeMdBlocks(result.blocks), 'a\n---\nb');
+    });
   });
 
   group('visualSelectionToMarkdown', () {

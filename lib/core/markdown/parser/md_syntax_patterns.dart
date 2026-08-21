@@ -12,6 +12,8 @@ abstract final class MdSyntaxPatterns {
   static final taskBodyMarker = RegExp(r'^\[([ xX])\](?:\s+(.*))?$');
   static final orderedLine = RegExp(r'^(\d+\.)\s+(.*)$');
   static final quotePrefix = RegExp(r'^>\s?');
+  /// 分割线：行首最多 3 空格 + 连续 ≥3 个同字符 `-` / `*` / `_`；不认 `- - -`。
+  static final thematicBreakLine = RegExp(r'^ {0,3}(-{3,}|\*{3,}|_{3,})\s*$');
 
   static bool taskMarkerIsChecked(String marker) =>
       marker.toLowerCase() == 'x';

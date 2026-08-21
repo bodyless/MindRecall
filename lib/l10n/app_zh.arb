@@ -217,6 +217,7 @@
   "toolbarOrderedList": "有序列表",
   "toolbarTaskList": "勾选列表",
   "toolbarQuote": "引用",
+  "toolbarThematicBreak": "分割线",
   "toolbarParagraph": "正文",
   "toolbarInsertImage": "插入图片"
 }

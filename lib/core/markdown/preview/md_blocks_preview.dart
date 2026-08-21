@@ -241,6 +241,18 @@ Widget _selectionMirrorForBlock(ThemeData theme, MdBlock block) {
         alt.isEmpty ? src : alt,
         style: transparent(theme.textTheme.bodyLarge),
       ),
+    ThematicBreakBlock() => SizedBox(
+        height: MdBlockStyles.thematicBreakHeight,
+        width: double.infinity,
+        child: const Text(
+          '---',
+          style: TextStyle(
+            color: Colors.transparent,
+            fontSize: 0.01,
+            height: 1,
+          ),
+        ),
+      ),
     ParagraphBlock(:final text) => Text(
         plainOf(text),
         style: transparent(theme.textTheme.bodyLarge),

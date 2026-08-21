@@ -40,7 +40,7 @@ class MdBlockRenderer extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (block.plainText.trim().isEmpty && block is! ImageBlock) {
+    if (block.plainText.trim().isEmpty && block.supportsPlainEditing) {
       return _emptyBlockChrome(theme, block);
     }
 
@@ -117,6 +117,11 @@ class MdBlockRenderer extends StatelessWidget {
           src: src,
           memoFilePath: memoFilePath,
           resolveLocalImage: resolveLocalImage,
+        ),
+      ThematicBreakBlock() => Divider(
+          height: MdBlockStyles.thematicBreakHeight,
+          thickness: MdBlockStyles.thematicBreakThickness,
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ParagraphBlock(:final text) => MdInlineText(
           markdown: text,
@@ -210,7 +215,9 @@ class _ImageContent extends StatelessWidget {
 
     if (uri.scheme == 'http' || uri.scheme == 'https') {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          vertical: MdBlockStyles.imageContentVerticalPadding,
+        ),
         child: Image.network(src, fit: BoxFit.contain),
       );
     }
@@ -227,7 +234,9 @@ class _ImageContent extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        vertical: MdBlockStyles.imageContentVerticalPadding,
+      ),
       child: Image.file(file, fit: BoxFit.contain),
     );
   }

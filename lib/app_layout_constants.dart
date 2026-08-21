@@ -76,6 +76,24 @@ double editorPageBottomPadding({required bool imeToolbarVisible}) {
   return imeToolbarVisible ? 0 : kEditorPagePadding;
 }
 
+/// 槽位变高超过此值视为软换行，需检查 IME 上浮。
+const double kImeContentWrapHeightEpsilon = 0.5;
+
+/// 活动块因软换行变高时，应检查是否还需上浮避开键盘。
+///
+/// [previousSlotHeight] 为 null 表示尚无基线（刚激活）：也检查一次，
+/// 避免第一下换行发生在基线写入之前被漏掉。
+bool shouldNudgeImeAfterContentWrap({
+  required double? previousSlotHeight,
+  required double nextSlotHeight,
+  double epsilon = kImeContentWrapHeightEpsilon,
+}) {
+  if (previousSlotHeight == null) {
+    return true;
+  }
+  return nextSlotHeight > previousSlotHeight + epsilon;
+}
+
 /// 若光标/块底边落在 IME 遮挡区内，返回还需上滚的像素；否则 0。
 double scrollDeltaToClearIme({
   required double caretOrBlockGlobalBottom,

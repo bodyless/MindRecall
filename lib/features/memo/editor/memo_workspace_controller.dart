@@ -8,6 +8,7 @@ import 'package:mind_recall/services/data_backup_service.dart';
 import 'package:mind_recall/services/memo_search_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 import 'package:mind_recall/services/memo_trash_service.dart';
+import 'package:mind_recall/services/process_text_capture.dart';
 import 'package:mind_recall/services/session_cache_service.dart';
 import 'package:mind_recall/services/user_preferences_service.dart';
 
@@ -331,6 +332,28 @@ class MemoWorkspaceController extends ChangeNotifier {
       notifyListeners();
     }
     return memo;
+  }
+
+  /// 将已规范化的选区文本写入笔记并立刻保存。
+  ///
+  /// 当前活动篇标题与正文都为空时复用该篇，否则先 [createNewMemo]。
+  Future<Memo> captureTextAsMemo(String text) async {
+    final reuse = shouldReuseEmptyActiveMemo(
+          title: titleController.text,
+          content: contentController.text,
+        ) &&
+        activeMemoId != null;
+    if (!reuse) {
+      await createNewMemo();
+    }
+    titleController.text = '';
+    contentController.text = text;
+    await flushSave();
+    final id = activeMemoId;
+    if (id == null) {
+      throw StateError('captureTextAsMemo: 无活动笔记');
+    }
+    return memoById(id) ?? await loadMemo(id);
   }
 
   Future<void> renameMemo({

@@ -95,4 +95,61 @@ void main() {
       expect(updated.text, 'new');
     });
   });
+
+  group('thematic break', () {
+    test('parses --- *** ___ and indented --- as ThematicBreakBlock', () {
+      expect(parseMarkdownBlocks('---').single, isA<ThematicBreakBlock>());
+      expect(parseMarkdownBlocks('***').single, isA<ThematicBreakBlock>());
+      expect(parseMarkdownBlocks('___').single, isA<ThematicBreakBlock>());
+      expect(parseMarkdownBlocks('   ---').single, isA<ThematicBreakBlock>());
+    });
+
+    test('*** round-trips to ---', () {
+      final blocks = parseMarkdownBlocks('***');
+      expect(serializeMdBlocks(blocks), '---');
+    });
+
+    test('- - - stays a bullet', () {
+      final blocks = parseMarkdownBlocks('- - -');
+      expect(blocks.single, isA<BulletBlock>());
+      expect((blocks.single as BulletBlock).text, '- -');
+    });
+
+    test('Foo\\n--- is paragraph plus break, not setext H2', () {
+      final blocks = parseMarkdownBlocks('Foo\n---');
+      expect(blocks, hasLength(2));
+      expect(blocks[0], isA<ParagraphBlock>());
+      expect((blocks[0] as ParagraphBlock).text, 'Foo');
+      expect(blocks[1], isA<ThematicBreakBlock>());
+    });
+
+    test('hello\\n---\\nworld splits into three blocks', () {
+      final blocks = parseMarkdownBlocks('hello\n---\nworld');
+      expect(blocks, hasLength(3));
+      expect((blocks[0] as ParagraphBlock).text, 'hello');
+      expect(blocks[1], isA<ThematicBreakBlock>());
+      expect((blocks[2] as ParagraphBlock).text, 'world');
+    });
+
+    test('applyBlockTrigger converts typed ---', () {
+      const block = ParagraphBlock(id: 'b1', text: '');
+      final triggered = applyBlockTrigger(block, '---');
+      expect(triggered, isA<ThematicBreakBlock>());
+      expect(triggered!.id, 'b1');
+    });
+
+    test('supportsPlainEditing is false only for atomic blocks', () {
+      expect(const ParagraphBlock(id: 'p', text: '').supportsPlainEditing, isTrue);
+      expect(
+        const HeadingBlock(id: 'h', level: 1, text: 't').supportsPlainEditing,
+        isTrue,
+      );
+      expect(const CodeBlock(id: 'c', code: 'x').supportsPlainEditing, isTrue);
+      expect(
+        const ImageBlock(id: 'i', alt: '', src: './a.png').supportsPlainEditing,
+        isFalse,
+      );
+      expect(const ThematicBreakBlock(id: 'hr').supportsPlainEditing, isFalse);
+    });
+  });
 }

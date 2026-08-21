@@ -66,6 +66,7 @@ String lineMarkdownForBlock(MdBlock block, String inlineMarkdown) {
     HeadingBlock(:final level) => '${'#' * level.clamp(1, 6)} $inlineMarkdown',
     QuoteBlock() => '> $inlineMarkdown',
     ParagraphBlock() => inlineMarkdown,
+    ThematicBreakBlock() => '---',
     _ => inlineMarkdown,
   };
 }
@@ -89,23 +90,4 @@ MdBlock reparseBlockFromLineMarkdown(
   return assignBlockId(parsed.first, preserveId);
 }
 
-MdBlock assignBlockId(MdBlock block, String id) {
-  return switch (block) {
-    HeadingBlock(:final level, :final text) =>
-      HeadingBlock(id: id, level: level, text: text),
-    ParagraphBlock(:final text, :final continuesWithNext) => ParagraphBlock(
-        id: id,
-        text: text,
-        continuesWithNext: continuesWithNext,
-      ),
-    BulletBlock(:final text, :final checked) =>
-      BulletBlock(id: id, text: text, checked: checked),
-    OrderedBlock(:final marker, :final text) =>
-      OrderedBlock(id: id, marker: marker, text: text),
-    QuoteBlock(:final text) => QuoteBlock(id: id, text: text),
-    CodeBlock(:final language, :final code) =>
-      CodeBlock(id: id, language: language, code: code),
-    ImageBlock(:final alt, :final src) =>
-      ImageBlock(id: id, alt: alt, src: src),
-  };
-}
+MdBlock assignBlockId(MdBlock block, String id) => block.copyWithId(id);

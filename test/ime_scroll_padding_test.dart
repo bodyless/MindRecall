@@ -297,4 +297,46 @@ void main() {
       );
     });
   });
+
+  group('shouldNudgeImeAfterContentWrap', () {
+    test('no baseline still checks once', () {
+      expect(
+        shouldNudgeImeAfterContentWrap(
+          previousSlotHeight: null,
+          nextSlotHeight: 24,
+        ),
+        isTrue,
+      );
+    });
+
+    test('same height does not nudge', () {
+      expect(
+        shouldNudgeImeAfterContentWrap(
+          previousSlotHeight: 40,
+          nextSlotHeight: 40,
+        ),
+        isFalse,
+      );
+    });
+
+    test('slot grew from wrap → nudge', () {
+      expect(
+        shouldNudgeImeAfterContentWrap(
+          previousSlotHeight: 24,
+          nextSlotHeight: 48,
+        ),
+        isTrue,
+      );
+    });
+
+    test('sub-pixel jitter does not count as wrap', () {
+      expect(
+        shouldNudgeImeAfterContentWrap(
+          previousSlotHeight: 40,
+          nextSlotHeight: 40.2,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

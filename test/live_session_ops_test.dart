@@ -263,4 +263,49 @@ void main() {
       );
     });
   });
+
+  group('thematic break session ops', () {
+    test('ensureEditableBlockAfterAtomic 在原子块下插入空段落', () {
+      final hr = ThematicBreakBlock(id: ids.next());
+      final result = ensureEditableBlockAfterAtomic(
+        blocks: [hr],
+        atomicIndex: 0,
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(2));
+      expect(result.blocks[0], isA<ThematicBreakBlock>());
+      expect(result.blocks[1], isA<ParagraphBlock>());
+      expect((result.blocks[1] as ParagraphBlock).text, isEmpty);
+      expect(result.newActiveId, result.blocks[1].id);
+    });
+
+    test('insertThematicBreakAt 替换空段落并聚焦线后空段', () {
+      final empty = ParagraphBlock(id: ids.next(), text: '');
+      final result = insertThematicBreakAt(
+        blocks: [empty],
+        index: 0,
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(2));
+      expect(result.blocks[0], isA<ThematicBreakBlock>());
+      expect(result.blocks[0].id, empty.id);
+      expect(result.blocks[1], isA<ParagraphBlock>());
+      expect(result.newActiveId, result.blocks[1].id);
+    });
+
+    test('insertThematicBreakAt 有正文则插在后方', () {
+      final para = ParagraphBlock(id: ids.next(), text: 'hello');
+      final result = insertThematicBreakAt(
+        blocks: [para],
+        index: 0,
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(3));
+      expect(result.blocks[0], isA<ParagraphBlock>());
+      expect((result.blocks[0] as ParagraphBlock).text, 'hello');
+      expect(result.blocks[1], isA<ThematicBreakBlock>());
+      expect(result.blocks[2], isA<ParagraphBlock>());
+      expect(result.newActiveId, result.blocks[2].id);
+    });
+  });
 }

@@ -151,6 +151,7 @@
   "toolbarOrderedList": "Numbered list",
   "toolbarTaskList": "Checklist",
   "toolbarQuote": "Quote",
+  "toolbarThematicBreak": "Divider",
   "toolbarParagraph": "Paragraph",
   "toolbarInsertImage": "Insert image"
 }

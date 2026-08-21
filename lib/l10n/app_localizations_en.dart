@@ -401,6 +401,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolbarQuote => 'Quote';
 
   @override
+  String get toolbarThematicBreak => 'Divider';
+
+  @override
   String get toolbarParagraph => 'Paragraph';
 
   @override

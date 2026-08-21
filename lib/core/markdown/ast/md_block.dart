@@ -9,7 +9,13 @@ sealed class MdBlock {
 
   MdBlock copyWithPlainText(String text);
 
+  /// 仅替换 [id]，其余字段不变。
+  MdBlock copyWithId(String id);
+
   String toMarkdown();
+
+  /// 实时是否用 TextField 编辑块体；`false` 为原子块（点选 + 删除，不挂 Overlay）。
+  bool get supportsPlainEditing => true;
 
   MdBlock asHeading(int level) => HeadingBlock(
         id: id,
@@ -46,6 +52,10 @@ final class HeadingBlock extends MdBlock {
 
   @override
   HeadingBlock copyWithPlainText(String text) =>
+      HeadingBlock(id: id, level: level, text: text);
+
+  @override
+  HeadingBlock copyWithId(String id) =>
       HeadingBlock(id: id, level: level, text: text);
 
   HeadingBlock copyWith({int? level, String? text}) => HeadingBlock(
@@ -88,6 +98,13 @@ final class ParagraphBlock extends MdBlock {
   ParagraphBlock copyWithPlainText(String text) => copyWith(text: text);
 
   @override
+  ParagraphBlock copyWithId(String id) => ParagraphBlock(
+        id: id,
+        text: text,
+        continuesWithNext: continuesWithNext,
+      );
+
+  @override
   String toMarkdown() => text;
 }
 
@@ -110,6 +127,10 @@ final class BulletBlock extends MdBlock {
 
   @override
   BulletBlock copyWithPlainText(String text) =>
+      BulletBlock(id: id, text: text, checked: checked);
+
+  @override
+  BulletBlock copyWithId(String id) =>
       BulletBlock(id: id, text: text, checked: checked);
 
   @override
@@ -143,6 +164,10 @@ final class OrderedBlock extends MdBlock {
       OrderedBlock(id: id, marker: marker, text: text);
 
   @override
+  OrderedBlock copyWithId(String id) =>
+      OrderedBlock(id: id, marker: marker, text: text);
+
+  @override
   String toMarkdown() => '$marker $text';
 }
 
@@ -159,6 +184,9 @@ final class QuoteBlock extends MdBlock {
 
   @override
   QuoteBlock copyWithPlainText(String text) => QuoteBlock(id: id, text: text);
+
+  @override
+  QuoteBlock copyWithId(String id) => QuoteBlock(id: id, text: text);
 
   @override
   String toMarkdown() => '> $text';
@@ -180,6 +208,10 @@ final class CodeBlock extends MdBlock {
   @override
   CodeBlock copyWithPlainText(String text) =>
       CodeBlock(id: id, code: text, language: language);
+
+  @override
+  CodeBlock copyWithId(String id) =>
+      CodeBlock(id: id, code: code, language: language);
 
   @override
   String toMarkdown() {
@@ -205,11 +237,37 @@ final class ImageBlock extends MdBlock {
   String get plainText => alt.isEmpty ? src : alt;
 
   @override
+  bool get supportsPlainEditing => false;
+
+  @override
   ImageBlock copyWithPlainText(String text) =>
       ImageBlock(id: id, alt: text, src: src);
 
   @override
+  ImageBlock copyWithId(String id) => ImageBlock(id: id, alt: alt, src: src);
+
+  @override
   String toMarkdown() => '![$alt]($src)';
+}
+
+/// Markdown 分割线（thematic break）；无正文，实时按原子块交互。
+final class ThematicBreakBlock extends MdBlock {
+  const ThematicBreakBlock({required super.id});
+
+  @override
+  bool get supportsPlainEditing => false;
+
+  @override
+  String get plainText => '';
+
+  @override
+  ThematicBreakBlock copyWithPlainText(String text) => this;
+
+  @override
+  ThematicBreakBlock copyWithId(String id) => ThematicBreakBlock(id: id);
+
+  @override
+  String toMarkdown() => '---';
 }
 
 /// 解析会话内生成 block id。

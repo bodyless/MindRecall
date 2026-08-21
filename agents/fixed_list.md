@@ -8,6 +8,11 @@
 
 ## 目录
 
+- 2026-08-21 — 水滴打字后隐藏；编辑模式偏 1–2px
+- 2026-08-21 — 同一块连续打字软换行不上浮
+- 2026-08-21 — 列表块行尾水滴手柄与光标错位
+- 2026-08-18 — 原子块删除钮：贴图偏高、贴线偏低、圆内 X 偏
+- 2026-08-16 — PROCESS_TEXT 嵌进源 App 导致黑屏卡住
 - 2026-08-15 — 实时输入时光标滞后约 100ms
 - 2026-08-15 — 有序列表序号相对无序/勾选偏左
 - 2026-08-15 — 空正文框点击无光标；空文档灰色提示
@@ -29,24 +34,18 @@
 - 2026-07-30 — 列表↔标题等换块类型时 IME 收起
 - 2026-07-30 — 新建空块显示「…」占位
 - 2026-07-29 — 实时模式活动块光标「悬」在字后空白处
-- 2026-07 — 实时 Overlay 命中区过高盖住下方块
-- 2026-07 — 去掉 ListView 外包 LayoutBuilder 后活动块视觉缩进
 - 既有 — 实时模式 plain 覆盖导致丢粗体
 - 既有 — splitBlockAt 直接 substring plain
-- 既有 — 活动块变更未走 applyPlainTextChange
 - 既有 — Android 行内工具栏抢焦点
 - 既有 — 透明叠加编辑行「消失」
 - 既有 — 切离实时模式未 flush
 - 既有 — Enter 拆块路径重复或遗漏
 - 既有 — 多行段落进实时未展开
 - 既有 — 按 block.id 重建活动 TextField 导致失焦
-- 既有 — 末行标题无法 Enter 新建段落
 - 既有 — 粗体渲染无 fontWeight
 - 既有 — 插入链接对话框抢回 IME
-- 既有 — 长文档点底部块光标上移正文未跟
 - 既有 — 行内 `***` 解析 RangeError
 - 既有 — 活动块滚出可视区光标漂顶
-- 既有 — 实时模式全选变成「全文」预期
 
 ---
 
@@ -65,6 +64,36 @@
 ---
 
 ## 清单
+
+### 2026-08-21 — 水滴打字后隐藏；编辑模式偏 1–2px
+- **现象**：实时模式点选后水滴一直跟着打字；编辑模式水滴比光标提前约 1–2px
+- **根因**：实时自绘水滴未对齐编辑模式「keyboard 隐藏 / tap 再显示」。系统折叠手柄 endpoint 在光标左缘，2px 光标条的视觉中线在 +1px，看起来手柄提前
+- **修复要点**：实时文本变化隐藏水滴，点选/激活再显示（`liveCollapsedHandleVisibleAfterEdit`）。编辑/标题 `selectionControls` 用 `alignedCollapsedHandleAnchor`（锚点 x − `kTextCaretWidth/2`）。**禁止**折叠水滴贴光标左缘；**禁止**打字时仍画折叠水滴
+- **相关**：`live_markdown_editor.dart`、`md_block_editor_field.dart`、`memo_editor_screen.dart`、`live_block_tap_ops.dart`、`test/live_caret_handle_test.dart`
+
+### 2026-08-21 — 同一块连续打字软换行不上浮
+- **现象**：点击块后上浮正确；但在同一输入框连续打字、中途不再点击/锁框，软换行后光标会被输入法盖住
+- **根因**：`_scheduleScrollActiveIntoView` 只在激活/聚焦/IME settle 时调度；`_onActiveFieldChanged` 不检查槽位变高
+- **修复要点**：文本变化后帧末对比活动槽高度，`shouldNudgeImeAfterContentWrap` 为真则 `_nudgeActiveBlockAboveIme`。**禁止**只在点击块或锁起输入框时上浮；软换行必须再检查。勿用 `ensureVisible` 跟每次按键（跳动）
+- **相关**：`live_markdown_editor.dart`、`app_layout_constants.dart`、`test/ime_scroll_padding_test.dart`、`test/live_caret_handle_test.dart`
+
+### 2026-08-21 — 列表块行尾水滴手柄与光标错位
+- **现象**：点击列表块后光标下方出现 Android 水滴手柄；同一块文字变多并移到行尾后，手柄偏到光标右侧。不必现，仅部分文档、仅列表块
+- **根因**：① 系统折叠手柄按透明 TextField 度量，与渲染层自定义光标不是同一套几何（列表更窄、软换行后文末 affinity 把自定义光标送到下一行行首）；② `_findBodyParagraph` 只在空块时跳过 `•`/`1.` 前缀
+- **修复要点**：chromeless `showCursor: false` 时**系统**折叠手柄必须关掉（`ChromelessTextSelectionControls`）；可见水滴按渲染层光标自绘（`liveCollapsedCaretHandleTopLeft`）。文末测光标用 `TextAffinity.upstream`；`findLiveBodyParagraph` **始终**跳过列表 chrome 前缀。**禁止**再让系统水滴跟自定义光标各测各的，也**禁止**关掉系统手柄后不补用户可见水滴
+- **相关**：`md_block_editor_field.dart`、`live_block_tap_ops.dart`、`live_markdown_editor.dart`、`test/live_block_tap_ops_test.dart`、`test/live_caret_handle_test.dart`
+
+### 2026-08-18 — 原子块删除钮：贴图偏高、贴线偏低、圆内 X 偏
+- **现象**：实时选中图片时 × 高出画面顶边；选中分割线时黑圆相对横线偏下；圆对准后叉仍偏在圆内
+- **根因**：图片与分割线共用 `Positioned(top: 4)`，未计入图片上下留白、也未按分割线槽高垂直居中；圆内用裸 `Icon` + `Padding`，图标字体 descent 把叉画出几何中心
+- **修复要点**：定位走 `MdBlockStyles.positionAtomicDeleteButton`（图片 `top` = 槽位 padding + `imageContentVerticalPadding` + inset；分割线 `top/bottom: 0` + `Center`）。钮体走 `buildAtomicDeleteButton`：固定正方形 + `Center` + `Text`（`height: 1`、`forceStrutHeight`）。叉相对圆心用 `atomicDeleteIconOpticalOffset` 微调。**禁止**图片/分割线再写死同一 `top`，也**禁止**裸 `Icon` 外包 `Padding` 当圆钮
+- **相关**：`md_block_styles.dart`、`live_markdown_editor.dart`、`test/md_block_chrome_test.dart`
+
+### 2026-08-16 — PROCESS_TEXT 嵌进源 App 导致黑屏卡住
+- **现象**：其它 App 选中文本点「记录到笔记」后，笔记 App 打不开，源 App 黑屏卡住
+- **根因**：`activity-alias` 把 Flutter `MainActivity` 直接当作 `PROCESS_TEXT` 处理方；系统在**调用方任务栈**里 `startActivityForResult`，主界面既不 `finish` 也不回到自己的 task，源 App 一直等结果
+- **修复要点**：必须用独立 `ProcessTextActivity`（`Theme.NoDisplay`，非 Flutter）接收选区，`FLAG_ACTIVITY_NEW_TASK|CLEAR_TOP|SINGLE_TOP` 打开 `MainActivity`，立刻 `setResult(CANCELED)` + `finish()`。**禁止**再把 `PROCESS_TEXT` alias/intent-filter 挂到 `MainActivity`
+- **相关**：`ProcessTextActivity.java`、`AndroidManifest.xml`、`test/android_process_text_manifest_test.dart`
 
 ### 2026-08-15 — 实时输入时光标滞后约 100ms
 - **现象**：打几个字后，光标要过约 100ms 才跟到新字后面
@@ -202,18 +231,6 @@
 - **修复要点**：chromeless 层 `showCursor: false`，按渲染层 `RenderParagraph` 实测位置画光标；粗体勿加会改变 advance 的 `letterSpacing`
 - **相关**：`live_markdown_editor.dart`（`_RendererSyncedCaret`）、`md_inline_renderer.dart`、`md_block_editor_field.dart`
 
-### 2026-07 — 实时 Overlay 命中区过高盖住下方块
-- **现象**：激活某块后点不到下方块
-- **根因**：Stack 给 Overlay 满屏 `maxHeight`，透明 TextField 命中条带覆盖下方
-- **修复要点**：Follower 内用 `Align(widthFactor: 1, heightFactor: 1)` 按内容收缩高度
-- **相关**：`live_markdown_editor.dart`
-
-### 2026-07 — 去掉 ListView 外包 LayoutBuilder 后活动块视觉缩进
-- **现象**：活动块相对非活动块多出左缩进
-- **根因**：Overlay 在 ListView padding 之外又加了一层水平 padding
-- **修复要点**：锚点已在 content 区内时，Overlay 只约束宽度，勿再叠加与列表不一致的左缩进
-- **相关**：`live_markdown_editor.dart`
-
 ### 既有 — 实时模式 plain 覆盖导致丢粗体
 - **现象**：预览/实时丢失 `**粗体**`
 - **根因**：用纯文本 `copyWithPlainText` 覆盖含行内 markdown 的 block
@@ -225,12 +242,6 @@
 - **根因**：按 plain 偏移直接切字符串
 - **修复要点**：必须 `splitInlineMarkdown`（或等价按 AST 拆分）
 - **相关**：`live_markdown_editor.dart`、`md_inline.dart`
-
-### 既有 — 活动块变更未走 applyPlainTextChange
-- **现象**：输入后格式被剥掉
-- **根因**：`_onActiveFieldChanged` 直接改 plain
-- **修复要点**：含行内格式的块同步必须 `applyPlainTextChange`
-- **相关**：`live_markdown_editor.dart`
 
 ### 既有 — Android 行内工具栏抢焦点
 - **现象**：点 B/I 后面板或选区异常、IME 跳动
@@ -268,12 +279,6 @@
 - **修复要点**：Stack 内**唯一持久** Overlay `MdBlockEditorField`（固定 key），换块只改 controller 内容
 - **相关**：`live_markdown_editor.dart`
 
-### 既有 — 末行标题无法 Enter 新建段落
-- **现象**：最后一行是 H1/H2/H3 时按 Enter 无新空段
-- **根因**：单行块未走「下方插入空段落」
-- **修复要点**：单行块 → `_insertEmptyBlockBelow`
-- **相关**：`live_markdown_editor.dart`
-
 ### 既有 — 粗体渲染无 fontWeight
 - **现象**：粗体看起来不够粗或与正文难区分
 - **根因**：`TextSpan` 未设 `fontWeight`
@@ -286,12 +291,6 @@
 - **修复要点**：对话框前 `_suspendEditorFocus()`
 - **相关**：`memo_editor_screen.dart`
 
-### 既有 — 长文档点底部块光标上移正文未跟
-- **现象**：键盘弹出后光标位置与可见正文错位
-- **根因**：ListView 底部 padding 不足 / ensureVisible 时机不对
-- **修复要点**：足够底部 padding；键盘弹出时瞬时 `ensureVisible`
-- **相关**：`live_markdown_editor.dart`
-
 ### 既有 — 行内 `***` 解析 RangeError
 - **现象**：输入或解析 `***` 崩溃
 - **根因**：`*.+?*` 匹配后未校验包裹长度就 `substring`
@@ -302,10 +301,4 @@
 - **现象**：滚动后光标出现在屏幕顶部
 - **根因**：Follower 在锚点不可见时仍显示
 - **修复要点**：滚出可视区隐藏 Follower；外层 `Clip.hardEdge`
-- **相关**：`live_markdown_editor.dart`
-
-### 既有 — 实时模式全选变成「全文」预期
-- **现象**：Ctrl+A 只能选当前块，用户以为坏了
-- **根因**：每块独立 TextField，这是架构约束
-- **修复要点**：勿强行做成跨块全选破坏 Overlay 模型；全文选择引导用编辑/预览模式
 - **相关**：`live_markdown_editor.dart`

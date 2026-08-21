@@ -16,6 +16,7 @@ String mdBlockDebugTypeLabel(MdBlock block) {
     CodeBlock(:final language) =>
       (language == null || language.isEmpty) ? 'code' : 'code:$language',
     ImageBlock() => 'img',
+    ThematicBreakBlock() => 'hr',
   };
 }
 

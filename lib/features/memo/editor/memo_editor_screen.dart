@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:mind_recall/app_layout_constants.dart';
 import 'package:mind_recall/core/debug/cursor_debug_hud.dart';
 import 'package:mind_recall/core/debug/debug_timeline.dart';
+import 'package:mind_recall/core/markdown/editor/md_block_editor_field.dart';
+import 'package:mind_recall/core/markdown/live_block_tap_ops.dart';
 import 'package:mind_recall/core/markdown/md_block_chrome_metrics.dart';
 import 'package:mind_recall/core/ui/ime_height_cache.dart';
 import 'package:mind_recall/core/ui/ime_metrics_observer.dart';
@@ -30,8 +32,10 @@ import 'package:mind_recall/features/memo/sidebar/memo_file_panel.dart';
 import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/models/user_preferences.dart';
+import 'package:mind_recall/services/android_process_text.dart';
 import 'package:mind_recall/services/memo_image_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
+import 'package:mind_recall/services/process_text_capture.dart';
 import 'package:mind_recall/services/user_preferences_service.dart';
 import 'package:mind_recall/shared/widgets/settings_panel.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -130,6 +134,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   String? _appVersionLabel;
   bool _suppressAutoSave = false;
   bool _isInitializing = true;
+  StreamSubscription<String>? _processTextSubscription;
+  Future<void> _processTextChain = Future<void>.value();
   final _sidebarReveal = SidebarRevealState();
   EditorViewMode _viewMode = EditorViewMode.live;
   Timer? _autoSaveTimer;
@@ -176,6 +182,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
 
   @override
   void dispose() {
+    _processTextSubscription?.cancel();
+    _processTextSubscription = null;
     _autoSaveTimer?.cancel();
     _historyTimer?.cancel();
     _workspace.removeListener(_onWorkspaceChanged);
@@ -234,9 +242,48 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
           debugTimelineSync('Editor.endInit', () {
             setState(() => _isInitializing = false);
           });
+          _subscribeProcessTextEvents();
         }
       }
     });
+  }
+
+  /// 工作区就绪后再听系统选区，避免与恢复上次文档抢跑。
+  void _subscribeProcessTextEvents() {
+    _processTextSubscription?.cancel();
+    _processTextSubscription = AndroidProcessText.events().listen((raw) {
+      _processTextChain = _processTextChain.then((_) {
+        return _onCapturedProcessText(raw);
+      });
+    });
+  }
+
+  Future<void> _onCapturedProcessText(String raw) async {
+    final text = normalizeCapturedProcessText(raw);
+    if (text == null || !mounted) {
+      return;
+    }
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _suppressAutoSave = true;
+    try {
+      if (_viewMode == EditorViewMode.live) {
+        _liveEditorKey.currentState?.flushToParent();
+      }
+      final memo = await _workspace.captureTextAsMemo(text);
+      if (!mounted) {
+        return;
+      }
+      _loadMemoIntoEditor(memo);
+      _activeBodyFocus.requestFocus();
+      _closeDrawerIfNeeded();
+    } catch (error) {
+      if (mounted) {
+        _showMessage(AppLocalizations.of(context)!.createFailed('$error'));
+      }
+    } finally {
+      _suppressAutoSave = false;
+    }
   }
 
   Future<void> _loadAppVersionLabel() async {
@@ -1647,6 +1694,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         onOrderedList: () => liveState?.applyOrderedList(),
         onTaskList: () => liveState?.applyTaskList(),
         onQuote: () => liveState?.applyQuote(),
+        onInsertThematicBreak: () => liveState?.insertThematicBreak(),
         onParagraph: () => liveState?.applyParagraph(),
         onBold: () => liveState?.applyBold(),
         onItalic: () => liveState?.applyItalic(),
@@ -1850,6 +1898,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       ),
       style: titleStyle,
       textInputAction: TextInputAction.next,
+      cursorWidth: kTextCaretWidth,
+      selectionControls: alignedCollapsedHandleControls,
       onSubmitted: (_) => _activeBodyFocus.requestFocus(),
     );
   }
@@ -1900,6 +1950,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
                 textAlignVertical: TextAlignVertical.top,
                 keyboardType: TextInputType.multiline,
                 style: theme.textTheme.bodyLarge,
+                cursorWidth: kTextCaretWidth,
+                selectionControls: alignedCollapsedHandleControls,
                 // spacer 已抬高视口底边；仅保留光标间隙给框架 bringIntoView。
                 scrollPadding: const EdgeInsets.only(bottom: kImeCaretGap),
               ),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -66,6 +67,11 @@ class LiveMarkdownEditor extends StatefulWidget {
   @visibleForTesting
   static const emptyBodyFillKey = ValueKey<String>('live-empty-body-fill');
 
+  /// 渲染层同步的折叠水滴手柄，便于单测断言仍可见且跟光标。
+  @visibleForTesting
+  static const collapsedCaretHandleKey =
+      ValueKey<String>('live-collapsed-caret-handle');
+
   @override
   State<LiveMarkdownEditor> createState() => LiveMarkdownEditorState();
 }
@@ -75,9 +81,6 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   static const _activeFocusKey = ValueKey<String>('live-active-focus');
   static const _syncToParentDebounce = Duration(milliseconds: 120);
   static const _scrollIntoViewDuration = Duration(milliseconds: 250);
-  static const _imageDeleteButtonInset = 4.0;
-  static const _imageDeleteIconSize = 18.0;
-  static const _imageDeleteTapPadding = 6.0;
 
   final _activeFieldController = TextEditingController();
   final _idGenerator = MdBlockIdGenerator();
@@ -104,6 +107,12 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   bool _keyboardScrollScheduled = false;
   /// 最近一次滚入调度原因（ensureVisible 埋点用）。
   String? _pendingScrollReason;
+  /// 活动块槽位高度基线；软换行变高时对比后决定是否 nudge。
+  double? _lastActiveSlotHeight;
+  /// 软换行 nudge 每帧最多调度一次。
+  bool _contentWrapNudgeScheduled = false;
+  /// 折叠水滴显示代数：点选/激活时 +1，caret 据此重新显示。
+  int _collapsedHandleRevealTick = 0;
   /// 键盘 metrics 收稳后最终对齐留白并滚入一次。
   Timer? _keyboardSettleTimer;
   /// 无缓存时 120ms nudge 防抖；有新 settle 则重武装。
@@ -315,6 +324,64 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       _nudgeActiveBlockAboveIme(reason: 'settleDebounced');
       _storeCommittedImeHeight();
     });
+  }
+
+  double? _activeSlotHeight() {
+    final id = _activeBlockId;
+    if (id == null) {
+      return null;
+    }
+    final context = _blockSlotKeys[id]?.currentContext;
+    final box = context?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      return null;
+    }
+    return box.size.height;
+  }
+
+  void _snapshotActiveSlotHeight() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _lastActiveSlotHeight = _activeSlotHeight();
+    });
+  }
+
+  /// 同一活动块因软换行变高时，检查是否还需上浮避开键盘。
+  void _scheduleNudgeOnContentWrap() {
+    if (_contentWrapNudgeScheduled) {
+      return;
+    }
+    _contentWrapNudgeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _contentWrapNudgeScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      final height = _activeSlotHeight();
+      if (height == null) {
+        return;
+      }
+      final imeOpen =
+          _keyboardBottomInset.value > 0 || _pendingKeyboardInset > 0;
+      if (imeOpen &&
+          widget.focusNode.hasFocus &&
+          shouldNudgeImeAfterContentWrap(
+            previousSlotHeight: _lastActiveSlotHeight,
+            nextSlotHeight: height,
+          )) {
+        _nudgeActiveBlockAboveIme(reason: 'contentWrap');
+      }
+      _lastActiveSlotHeight = height;
+    });
+  }
+
+  void _revealCollapsedCaretHandle() {
+    _collapsedHandleRevealTick++;
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _syncImeCacheDownCorrectTimer() {
@@ -823,6 +890,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       }
       final block = _blocks[index];
       _activeBlockId = blockId;
+      _lastActiveSlotHeight = null;
       _updateActiveController(editableTextForBlock(block), selection);
       _publishLiveCursorDebugHud();
       if (mounted) {
@@ -833,6 +901,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         force: forceFocus || notifyParent,
         notifyParent: notifyParent,
       );
+      _snapshotActiveSlotHeight();
     });
   }
 
@@ -984,6 +1053,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
         });
         _blocks = prepared.blocks;
         _activeBlockId = prepared.activeBlockId;
+        _lastActiveSlotHeight = null;
         // 换文档/重载后先显示 Overlay；帧末再按真实视口校正。
         _activeOverlayInView = true;
         _pruneBlockSlotKeys();
@@ -998,6 +1068,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
             return;
           }
           _updateActiveOverlayVisibility();
+          _snapshotActiveSlotHeight();
         });
         // 大文档首次滑动卡顿：预热 ListView 缓存区。
         if (_blocks.length > 80) {
@@ -1035,7 +1106,14 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     final current = _activeFieldController.value;
     final start = selection.start.clamp(0, text.length);
     final end = selection.end.clamp(0, text.length);
-    final newSelection = TextSelection(baseOffset: start, extentOffset: end);
+    final newSelection = start == end
+        ? TextSelection.collapsed(
+            offset: start,
+            affinity: start >= text.length && text.isNotEmpty
+                ? TextAffinity.upstream
+                : selection.affinity,
+          )
+        : TextSelection(baseOffset: start, extentOffset: end);
     if (current.text == text && current.selection == newSelection) {
       return;
     }
@@ -1107,6 +1185,10 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     final text = value.text;
     final previous = _blocks[index];
     MdBlock block = previous;
+    final textChanged = text != editableTextForBlock(previous);
+    if (textChanged) {
+      _scheduleNudgeOnContentWrap();
+    }
 
     final triggered = applyBlockTrigger(block, text);
     if (triggered != null) {
@@ -1115,6 +1197,25 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
           inlineMarkdownForBlock(previous);
       final typeChanged = block.runtimeType != previous.runtimeType;
       _blocks[index] = block;
+      if (!block.supportsPlainEditing) {
+        final continued = ensureEditableBlockAfterAtomic(
+          blocks: _blocks,
+          atomicIndex: index,
+          idGenerator: _idGenerator,
+        );
+        _blocks = continued.blocks;
+        _scheduleSyncToParent();
+        if (mounted) {
+          _markLayoutTransition();
+          setState(() {});
+        }
+        _switchToActiveBlock(
+          blockId: continued.newActiveId,
+          selection: const TextSelection.collapsed(offset: 0),
+          forceFocus: true,
+        );
+        return;
+      }
       _scheduleSyncToParent();
       if (mounted &&
           (typeChanged ||
@@ -1213,6 +1314,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       if (blockId == _activeBlockId) {
         _pendingActivateTapGlobal = null;
         restoreFocus();
+        _revealCollapsedCaretHandle();
         return;
       }
       debugTimelineSync('Live.commitActive', _commitActiveBlock);
@@ -1246,6 +1348,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       );
       _activeOverlayInView = true;
       _scheduleScrollActiveIntoView();
+      _revealCollapsedCaretHandle();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _updateActiveOverlayVisibility();
@@ -1261,7 +1364,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
   }) {
     final global = _pendingActivateTapGlobal;
     _pendingActivateTapGlobal = null;
-    if (global == null || block is ImageBlock) {
+    if (global == null || !block.supportsPlainEditing) {
       return null;
     }
     final slotContext = _slotKeyFor(block.id).currentContext;
@@ -1274,7 +1377,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       slotRoot: slotContext.findRenderObject(),
       globalPosition: global,
       plainText: plainText,
-      findBodyParagraph: _findBodyParagraph,
+      findBodyParagraph: findLiveBodyParagraph,
       displayMarkdown: displayMarkdown,
       resolveLinkLabel: widget.resolveLinkLabel,
     );
@@ -1289,8 +1392,8 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     _saveTimer?.cancel();
     _clearInlineActionCache();
     if (_activeBlockId == blockId) {
-      // 图片块无 plain 编辑内容，无需 commit 文本。
-      if (_blocks[index] is! ImageBlock) {
+      // 原子块无 plain 编辑内容，无需 commit 文本。
+      if (_blocks[index].supportsPlainEditing) {
         _commitActiveBlock();
       }
     } else {
@@ -1310,7 +1413,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       selection: TextSelection.collapsed(
         offset: editableTextForBlock(next).length,
       ),
-      forceFocus: next is! ImageBlock,
+      forceFocus: next.supportsPlainEditing,
     );
   }
 
@@ -1633,6 +1736,35 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
     _applyLineMarkdownTransform(applyParagraphLineMarkdown);
   }
 
+  /// 在活动块处插入分割线，并聚焦线后的空段落。
+  void insertThematicBreak() {
+    _commitActiveBlock();
+    final activeId = _activeBlockId;
+    if (activeId == null) {
+      return;
+    }
+    final index = _indexOf(activeId);
+    if (index < 0) {
+      return;
+    }
+    final result = insertThematicBreakAt(
+      blocks: _blocks,
+      index: index,
+      idGenerator: _idGenerator,
+    );
+    _blocks = result.blocks;
+    _syncToParent();
+    if (mounted) {
+      _markLayoutTransition();
+      setState(() {});
+    }
+    _switchToActiveBlock(
+      blockId: result.newActiveId,
+      selection: const TextSelection.collapsed(offset: 0),
+      forceFocus: true,
+    );
+  }
+
   void applyBold() => _applyInlineStyle(InlineStyle.bold);
 
   void applyItalic() => _applyInlineStyle(InlineStyle.italic);
@@ -1897,31 +2029,17 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       );
     }
 
-    // 图片块：点击选中后右上角显示 ×，不走透明 TextField Overlay。
-    if (block is ImageBlock) {
+    // 原子块：点击选中后右上角显示 ×，不走透明 TextField Overlay。
+    if (!block.supportsPlainEditing) {
       final imageBody = Stack(
         clipBehavior: Clip.none,
         children: [
           buildRenderer(block),
           if (isActive)
-            Positioned(
-              top: _imageDeleteButtonInset,
-              right: _imageDeleteButtonInset,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _deleteBlockById(block.id),
-                child: const Material(
-                  color: Colors.black54,
-                  shape: CircleBorder(),
-                  child: Padding(
-                    padding: EdgeInsets.all(_imageDeleteTapPadding),
-                    child: Icon(
-                      Icons.close,
-                      size: _imageDeleteIconSize,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
+            MdBlockStyles.positionAtomicDeleteButton(
+              block: block,
+              button: MdBlockStyles.buildAtomicDeleteButton(
+                onPressed: () => _deleteBlockById(block.id),
               ),
             ),
         ],
@@ -2085,7 +2203,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
             ),
           ],
         ),
-        if (activeBlock != null && activeBlock is! ImageBlock)
+        if (activeBlock != null && activeBlock.supportsPlainEditing)
           LayoutBuilder(
             builder: (context, constraints) {
               // 锚点已在 ListView content 区内，宽度与 list children 约束一致。
@@ -2116,24 +2234,29 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
                                   ? _blocks[activeIndex - 1]
                                   : null,
                             ),
-                            child: Focus(
-                              key: _activeFocusKey,
-                              onKeyEvent: _handleKeyEvent,
-                              child: MdBlockEditorField(
-                                key: _activeEditorKey,
-                                block: activeBlock,
-                                controller: _activeFieldController,
-                                focusNode: widget.focusNode,
-                                onSplitBlockAt: splitBlockAt,
-                                onPasteMarkdown: pasteMarkdownAtCaret,
-                                resolveLocalImage: widget.resolveLocalImage,
-                                onLinkTap: widget.onLinkTap,
-                                resolveLinkLabel: widget.resolveLinkLabel,
-                                onTaskToggle: activeBlock is BulletBlock &&
-                                        activeBlock.checked != null
-                                    ? () => toggleTaskChecked(activeBlock.id)
-                                    : null,
-                                chromeless: true,
+                            child: Listener(
+                              onPointerDown: (_) =>
+                                  _revealCollapsedCaretHandle(),
+                              child: Focus(
+                                key: _activeFocusKey,
+                                onKeyEvent: _handleKeyEvent,
+                                child: MdBlockEditorField(
+                                  key: _activeEditorKey,
+                                  block: activeBlock,
+                                  controller: _activeFieldController,
+                                  focusNode: widget.focusNode,
+                                  onSplitBlockAt: splitBlockAt,
+                                  onPasteMarkdown: pasteMarkdownAtCaret,
+                                  resolveLocalImage: widget.resolveLocalImage,
+                                  onLinkTap: widget.onLinkTap,
+                                  resolveLinkLabel: widget.resolveLinkLabel,
+                                  onTaskToggle: activeBlock is BulletBlock &&
+                                          activeBlock.checked != null
+                                      ? () => toggleTaskChecked(activeBlock.id)
+                                      : null,
+                                  chromeless: true,
+                                  onTap: _revealCollapsedCaretHandle,
+                                ),
                               ),
                             ),
                           ),
@@ -2146,6 +2269,7 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
                             focusNode: widget.focusNode,
                             cursorColor: Theme.of(context).colorScheme.primary,
                             resolveLinkLabel: widget.resolveLinkLabel,
+                            handleRevealTick: _collapsedHandleRevealTick,
                             displayMarkdownOf: () {
                               final block = _activeBlock;
                               if (block == null ||
@@ -2182,6 +2306,7 @@ class _RendererSyncedCaret extends StatefulWidget {
     required this.focusNode,
     required this.cursorColor,
     required this.displayMarkdownOf,
+    required this.handleRevealTick,
     this.resolveLinkLabel,
   });
 
@@ -2192,18 +2317,21 @@ class _RendererSyncedCaret extends StatefulWidget {
   final Color cursorColor;
   final String? Function() displayMarkdownOf;
   final String? Function(String href)? resolveLinkLabel;
+  final int handleRevealTick;
 
   @override
   State<_RendererSyncedCaret> createState() => _RendererSyncedCaretState();
 }
 
 class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
-  static const _caretWidth = 2.0;
+  static const _caretWidth = kTextCaretWidth;
   static const _blinkPeriod = Duration(milliseconds: 500);
   static const _maxMeasureRetries = 8;
 
   Timer? _blinkTimer;
   bool _caretVisible = true;
+  bool _handleVisible = true;
+  String? _lastPlain;
   Offset? _caretTopLeft;
   double _caretHeight = 0;
   bool _measureScheduled = false;
@@ -2214,6 +2342,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
     super.initState();
     widget.controller.addListener(_onTextOrSelectionChanged);
     widget.focusNode.addListener(_onFocusChanged);
+    _lastPlain = widget.controller.text;
     _onFocusChanged();
     _scheduleMeasure();
   }
@@ -2230,6 +2359,14 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
       widget.focusNode.addListener(_onFocusChanged);
       _onFocusChanged();
     }
+    if (oldWidget.handleRevealTick != widget.handleRevealTick) {
+      _handleVisible = liveCollapsedHandleVisibleAfterEdit(
+        visible: _handleVisible,
+        textChanged: false,
+        revealFromUserTap: true,
+      );
+      _measureRetries = 0;
+    }
     _scheduleMeasure();
   }
 
@@ -2242,6 +2379,14 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
   }
 
   void _onTextOrSelectionChanged() {
+    final nextPlain = widget.controller.text;
+    final textChanged = _lastPlain != null && nextPlain != _lastPlain;
+    _lastPlain = nextPlain;
+    _handleVisible = liveCollapsedHandleVisibleAfterEdit(
+      visible: _handleVisible,
+      textChanged: textChanged,
+      revealFromUserTap: false,
+    );
     _measureRetries = 0;
     _restartBlink();
     _scheduleMeasure();
@@ -2325,7 +2470,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
     }
 
     final plain = widget.controller.text;
-    final paragraph = _findBodyParagraph(
+    final paragraph = findLiveBodyParagraph(
       slotContext.findRenderObject(),
       plainText: plain,
     );
@@ -2357,7 +2502,7 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
     // 空块占位「 」：逻辑 offset 0 对应显示首部。
     final displayOffset = plain.isEmpty
         ? 0
-        : _plainOffsetToDisplayOffset(
+        : plainOffsetToDisplayOffset(
             plainOffset: selection.extentOffset.clamp(0, plain.length),
             plainText: plain,
             displayText: displayText,
@@ -2366,13 +2511,21 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
           );
 
     const caretPrototype = Rect.fromLTWH(0, 0, _caretWidth, 1);
+    final caretPosition = caretTextPositionForDisplay(
+      displayOffset: displayOffset,
+      displayLength: displayText.length,
+      affinity: selection.affinity,
+    );
     final localCaret = paragraph.getOffsetForCaret(
-      TextPosition(offset: displayOffset),
+      caretPosition,
       caretPrototype,
     );
-    final height = paragraph.getFullHeightForCaret(
-      TextPosition(offset: displayOffset),
-    );
+    var height = paragraph.getFullHeightForCaret(caretPosition);
+    if (height <= 0) {
+      height = paragraph.getFullHeightForCaret(
+        TextPosition(offset: caretPosition.offset),
+      );
+    }
     if (height <= 0) {
       _retryMeasure();
       return;
@@ -2391,115 +2544,79 @@ class _RendererSyncedCaretState extends State<_RendererSyncedCaret> {
   @override
   Widget build(BuildContext context) {
     final topLeft = _caretTopLeft;
-    if (!_caretVisible || topLeft == null || _caretHeight <= 0) {
+    if (topLeft == null || _caretHeight <= 0) {
       return const SizedBox.shrink();
     }
 
-    return Positioned(
-      left: topLeft.dx,
-      top: topLeft.dy,
-      child: IgnorePointer(
-        child: Container(
-          width: _caretWidth,
-          height: _caretHeight,
-          color: widget.cursorColor,
-        ),
+    final handleTopLeft = liveCollapsedCaretHandleTopLeft(
+      caretTopLeft: topLeft,
+      caretWidth: _caretWidth,
+      caretHeight: _caretHeight,
+    );
+
+    return Positioned.fill(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (_caretVisible)
+            Positioned(
+              left: topLeft.dx,
+              top: topLeft.dy,
+              child: IgnorePointer(
+                child: Container(
+                  width: _caretWidth,
+                  height: _caretHeight,
+                  color: widget.cursorColor,
+                ),
+              ),
+            ),
+          if (_handleVisible)
+            Positioned(
+              left: handleTopLeft.dx,
+              top: handleTopLeft.dy,
+              child: GestureDetector(
+                key: LiveMarkdownEditor.collapsedCaretHandleKey,
+                behavior: HitTestBehavior.opaque,
+                onTap: () => widget.focusNode.requestFocus(),
+                child: Transform.rotate(
+                  angle: math.pi / 4,
+                  child: CustomPaint(
+                    size: const Size(
+                      kLiveCollapsedCaretHandleSize,
+                      kLiveCollapsedCaretHandleSize,
+                    ),
+                    painter: _LiveCaretDropHandlePainter(
+                      color: widget.cursorColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-RenderParagraph? _findBodyParagraph(
-  RenderObject? root, {
-  required String plainText,
-}) {
-  if (root == null) {
-    return null;
-  }
-  final paragraphs = <RenderParagraph>[];
-  void visit(RenderObject node) {
-    if (node is RenderParagraph) {
-      paragraphs.add(node);
-    }
-    node.visitChildren(visit);
+/// Material 折叠水滴：圆 + 左上角方块，旋转 45° 后尖端朝上。
+class _LiveCaretDropHandlePainter extends CustomPainter {
+  const _LiveCaretDropHandlePainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final radius = size.width / 2.0;
+    final path = Path()
+      ..addOval(Rect.fromCircle(center: Offset(radius, radius), radius: radius))
+      ..addRect(Rect.fromLTWH(0, 0, radius, radius));
+    canvas.drawPath(path, paint);
   }
 
-  visit(root);
-  if (paragraphs.isEmpty) {
-    return null;
+  @override
+  bool shouldRepaint(covariant _LiveCaretDropHandlePainter oldDelegate) {
+    return color != oldDelegate.color;
   }
-
-  // 空块占位是透明空格「 」；勿误用列表「• 」前缀段落。
-  if (plainText.isEmpty) {
-    for (final paragraph in paragraphs) {
-      final text = paragraph.text.toPlainText();
-      if (text == ' ' || text == '\u200B' || text.isEmpty) {
-        return paragraph;
-      }
-    }
-    for (final paragraph in paragraphs) {
-      final text = paragraph.text.toPlainText();
-      if (!text.startsWith('•') && !RegExp(r'^\d+\.\s').hasMatch(text)) {
-        return paragraph;
-      }
-    }
-    return paragraphs.last;
-  }
-
-  for (final paragraph in paragraphs) {
-    final text = paragraph.text.toPlainText();
-    if (text == plainText) {
-      return paragraph;
-    }
-  }
-
-  // 列表块另有「•」/「1.」前缀段落，取最宽的正文段落。
-  paragraphs.sort((a, b) => b.size.width.compareTo(a.size.width));
-  return paragraphs.first;
 }
 
-int _plainOffsetToDisplayOffset({
-  required int plainOffset,
-  required String plainText,
-  required String displayText,
-  required String? displayMarkdown,
-  String? Function(String href)? resolveLinkLabel,
-}) {
-  if (plainOffset >= plainText.length) {
-    return displayText.length;
-  }
-  if (plainText == displayText || displayMarkdown == null) {
-    return plainOffset.clamp(0, displayText.length);
-  }
-
-  final nodes = parseInlineMarkdown(displayMarkdown);
-  var plainRemaining = plainOffset;
-  var display = 0;
-  for (final node in nodes) {
-    final plainLen = node.plainText.length;
-    final shown = switch (node) {
-      LinkInline(:final label, :final href) => linkDisplayLabel(
-          label: label,
-          href: href,
-          resolvedTitle: resolveLinkLabel?.call(href),
-        ),
-      _ => node.plainText,
-    };
-    if (plainRemaining <= plainLen) {
-      if (shown.length == plainLen) {
-        return display + plainRemaining;
-      }
-      if (plainRemaining <= 0) {
-        return display;
-      }
-      if (plainRemaining >= plainLen) {
-        return display + shown.length;
-      }
-      final ratio = plainRemaining / plainLen;
-      return display + (ratio * shown.length).round().clamp(0, shown.length);
-    }
-    plainRemaining -= plainLen;
-    display += shown.length;
-  }
-  return display.clamp(0, displayText.length);
-}

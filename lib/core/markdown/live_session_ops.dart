@@ -170,3 +170,48 @@ MdBlock copyWithContinuesWithNext(
   }
   return block;
 }
+
+/// 原子块下方插入空段落，供继续键入。
+({List<MdBlock> blocks, String newActiveId}) ensureEditableBlockAfterAtomic({
+  required List<MdBlock> blocks,
+  required int atomicIndex,
+  required MdBlockIdGenerator idGenerator,
+}) {
+  final next = List<MdBlock>.of(blocks);
+  final paragraph = ParagraphBlock(id: idGenerator.next(), text: '');
+  final insertAt = (atomicIndex + 1).clamp(0, next.length);
+  next.insert(insertAt, paragraph);
+  return (blocks: next, newActiveId: paragraph.id);
+}
+
+/// 在 [index] 处插入分割线：空段落则替换，否则插在后方；线后再插空段落并聚焦。
+({List<MdBlock> blocks, String newActiveId}) insertThematicBreakAt({
+  required List<MdBlock> blocks,
+  required int index,
+  required MdBlockIdGenerator idGenerator,
+}) {
+  final next = List<MdBlock>.of(blocks);
+  if (next.isEmpty || index < 0 || index >= next.length) {
+    next.add(ThematicBreakBlock(id: idGenerator.next()));
+    return ensureEditableBlockAfterAtomic(
+      blocks: next,
+      atomicIndex: next.length - 1,
+      idGenerator: idGenerator,
+    );
+  }
+
+  final current = next[index];
+  final int atomicIndex;
+  if (current is ParagraphBlock && current.text.trim().isEmpty) {
+    next[index] = ThematicBreakBlock(id: current.id);
+    atomicIndex = index;
+  } else {
+    next.insert(index + 1, ThematicBreakBlock(id: idGenerator.next()));
+    atomicIndex = index + 1;
+  }
+  return ensureEditableBlockAfterAtomic(
+    blocks: next,
+    atomicIndex: atomicIndex,
+    idGenerator: idGenerator,
+  );
+}

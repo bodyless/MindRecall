@@ -3,11 +3,60 @@ import 'package:flutter/services.dart';
 
 import '../ast/md_block.dart';
 import '../block_ops.dart';
+import '../live_block_tap_ops.dart';
 import '../renderer/markdown_image_resolver.dart';
 import '../renderer/md_block_chrome.dart';
 import '../renderer/md_block_renderer.dart';
 import '../renderer/md_block_styles.dart';
 import '../renderer/md_inline_renderer.dart';
+
+/// chromeless Overlay 用的选区控件：折叠态不画**系统**水滴手柄。
+///
+/// 系统手柄按透明 [TextField] 度量，与渲染层自定义光标会错位。可见水滴改由
+/// Live 层按渲染层光标坐标自绘；此处只关掉系统折叠手柄，左右选区手柄仍保留。
+class ChromelessTextSelectionControls extends MaterialTextSelectionControls {
+  ChromelessTextSelectionControls();
+
+  @override
+  Widget buildHandle(
+    BuildContext context,
+    TextSelectionHandleType type,
+    double textHeight, [
+    VoidCallback? onTap,
+  ]) {
+    if (type == TextSelectionHandleType.collapsed) {
+      return const SizedBox.shrink();
+    }
+    return super.buildHandle(context, type, textHeight, onTap);
+  }
+
+  @override
+  Offset getHandleAnchor(TextSelectionHandleType type, double textLineHeight) {
+    if (type == TextSelectionHandleType.collapsed) {
+      return Offset.zero;
+    }
+    return super.getHandleAnchor(type, textLineHeight);
+  }
+}
+
+/// chromeless Overlay 共用实例，避免每帧新建 controls。
+final chromelessTextSelectionControls = ChromelessTextSelectionControls();
+
+/// 编辑模式折叠水滴：对准 2px 光标中线（系统默认贴左缘会提前 1px）。
+class AlignedCollapsedHandleControls extends MaterialTextSelectionControls {
+  AlignedCollapsedHandleControls();
+
+  @override
+  Offset getHandleAnchor(TextSelectionHandleType type, double textLineHeight) {
+    final anchor = super.getHandleAnchor(type, textLineHeight);
+    if (type != TextSelectionHandleType.collapsed) {
+      return anchor;
+    }
+    return alignedCollapsedHandleAnchor(anchor);
+  }
+}
+
+final alignedCollapsedHandleControls = AlignedCollapsedHandleControls();
 
 /// 实时模式活动块的 [TextField]，可选 styled 透明叠加层。
 ///
@@ -25,6 +74,7 @@ class MdBlockEditorField extends StatefulWidget {
     this.onLinkTap,
     this.resolveLinkLabel,
     this.onTaskToggle,
+    this.onTap,
     this.chromeless = false,
   });
 
@@ -41,6 +91,9 @@ class MdBlockEditorField extends StatefulWidget {
 
   /// 实时模式勾选前缀点击（chromeless Overlay 与列表层共用）。
   final VoidCallback? onTaskToggle;
+
+  /// 实时 Overlay 点击（点选显示折叠水滴）。
+  final VoidCallback? onTap;
 
   /// 实时 Overlay 模式：不重复渲染列表/引用等块级装饰，仅保留与渲染层对齐的输入框。
   final bool chromeless;
@@ -65,6 +118,7 @@ class _MdBlockEditorFieldState extends State<MdBlockEditorField> {
           onLinkTap: widget.onLinkTap,
           resolveLinkLabel: widget.resolveLinkLabel,
           onTaskToggle: widget.onTaskToggle,
+          onTap: widget.onTap,
           chromeless: widget.chromeless,
         );
       },
@@ -83,6 +137,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
     this.onLinkTap,
     this.resolveLinkLabel,
     this.onTaskToggle,
+    this.onTap,
     this.chromeless = false,
   });
 
@@ -95,6 +150,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
   final ValueChanged<String>? onLinkTap;
   final String? Function(String href)? resolveLinkLabel;
   final VoidCallback? onTaskToggle;
+  final VoidCallback? onTap;
   final bool chromeless;
 
   @override
@@ -281,7 +337,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
             ),
           ),
         ),
-      ImageBlock() => MdBlockRenderer(
+      ImageBlock() || ThematicBreakBlock() => MdBlockRenderer(
           block: block,
           resolveLocalImage: resolveLocalImage,
         ),
@@ -319,6 +375,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
     // 列表层已绘制正文；此处只放透明 TextField + 与渲染层等宽的不可见前缀占位。
     // 列表层已绘制正文；系统光标按 TextField 度量会与 MdInlineText 错位，
     // 由 Live 层按渲染层实测位置绘制光标（showCursor: false）。
+    // cursorWidth: 0 避免 RenderEditable 为光标预留宽度导致比 MdInlineText 更早换行。
     final textField = TextField(
       controller: controller,
       focusNode: focusNode,
@@ -326,7 +383,10 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
       keyboardType: TextInputType.multiline,
       textInputAction: TextInputAction.newline,
       showCursor: false,
+      cursorWidth: 0,
       cursorColor: cursorColor,
+      selectionControls: chromelessTextSelectionControls,
+      onTap: onTap,
       minLines: 1,
       strutStyle: strutStyle,
       scrollPadding: EdgeInsets.zero,

@@ -397,6 +397,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolbarQuote => '引用';
 
   @override
+  String get toolbarThematicBreak => '分割线';
+
+  @override
   String get toolbarParagraph => '正文';
 
   @override

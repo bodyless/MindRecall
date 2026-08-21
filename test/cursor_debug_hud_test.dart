@@ -81,6 +81,10 @@ void main() {
         ),
         'task:x',
       );
+      expect(
+        mdBlockDebugTypeLabel(const ThematicBreakBlock(id: '1')),
+        'hr',
+      );
     });
   });
 
