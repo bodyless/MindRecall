@@ -33,6 +33,7 @@ import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/android_process_text.dart';
+import 'package:mind_recall/services/android_storage_permission.dart';
 import 'package:mind_recall/services/memo_image_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 import 'package:mind_recall/services/process_text_capture.dart';
@@ -1226,6 +1227,12 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     final l10n = AppLocalizations.of(context)!;
     try {
       await _flushSave();
+      if (!await AndroidStoragePermission.requestIfNeeded()) {
+        if (mounted) {
+          _showMessage(l10n.storageAllFilesAccessRequired);
+        }
+        return;
+      }
       final dest = await FilePicker.platform.getDirectoryPath(
         dialogTitle: l10n.exportData,
       );
@@ -1272,6 +1279,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         ),
       );
       if (confirmed != true) {
+        return false;
+      }
+
+      if (!await AndroidStoragePermission.requestIfNeeded()) {
+        if (mounted) {
+          _showMessage(l10n.storageAllFilesAccessRequired);
+        }
         return false;
       }
 

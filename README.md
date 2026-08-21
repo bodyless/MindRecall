@@ -29,7 +29,7 @@
 ### 备忘录与文件
 
 - 每条备忘录 → 一个 `{timestamp}.md` 文件（兼容旧 `.txt`）
-- 存储根目录：**各平台 Downloads 下的 `MindRecall/`**（无法访问 Downloads 时回退到应用 Documents）
+- 存储根目录：**各平台 Downloads 下的 `MindRecall/`**（无法访问 Downloads 时回退到应用 Documents）。Android 11+ 导入公共目录备份须系统「所有文件访问」权限（卸包重装后旧备份不再视为本应用文件）
 - 文件格式：`标题` + 空行 + `正文`（标题为空则整文件为正文）
 - 自动保存（约 800ms debounce）；切换文件 / 切预览前 `flushSave`
 - 新建、重命名（改标题字段）、删除、在资源管理器中显示（Android / 桌面平台）
@@ -56,7 +56,7 @@
 
 ### 图片
 
-- 选图 → 复制到 `{memoId}_assets/` → 插入 `![alt](./{memoId}_assets/xxx.png)`
+- 选图 → 复制到 `{memoId}_assets/` → 插入 `![alt](./{memoId}_assets/xxx.png)`。导出/导入备份包含该资源目录
 - 预览 / 实时渲染时通过 `MarkdownImageResolver` 解析相对路径（默认 `defaultMemoMarkdownImageResolver`）
 
 ### 其他 UX
@@ -507,6 +507,7 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 29. 非活动块激活：`onTapDown` → `plainOffsetAtGlobalTap`；勿写死块末 caret
 30. 实时光标：按列表层 `RenderParagraph` 实测；若段落 plain 尚未跟上 controller，须再等一帧测量，勿把光标钉在旧字后（父级 `_syncToParent` 有 120ms debounce，不能当光标刷新）
 31. Android「记录到笔记」：`PROCESS_TEXT` 必须用 `ProcessTextActivity` trampoline（`NEW_TASK` 打开 `MainActivity` 后立刻 `finish`/`RESULT_CANCELED`）。**禁止** `activity-alias` 到 Flutter `MainActivity`，否则源 App 黑屏卡住
+32. Android 11+ 导入 `Download` 备份：须 `MANAGE_EXTERNAL_STORAGE`（导入/导出前打开系统授权页）。卸包重装后 **禁止** 只靠 `File.copy` 读公共目录文件，会 `Permission denied`。图片在 `{id}_assets/`，导入须 Java `listFiles` + 按 Markdown 引用补拷，并声明 `READ_MEDIA_IMAGES`；**禁止**以为拷了 `.md` 图片就在
 
 ### 撤回 / 重做
 

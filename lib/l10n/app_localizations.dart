@@ -482,6 +482,12 @@ abstract class AppLocalizations {
   /// **'已取消'**
   String get backupPickCancelled;
 
+  /// No description provided for @storageAllFilesAccessRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请在系统设置中允许「所有文件访问」后再试。'**
+  String get storageAllFilesAccessRequired;
+
   /// No description provided for @fontSizeSmall.
   ///
   /// In zh, this message translates to:

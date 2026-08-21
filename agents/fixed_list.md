@@ -8,6 +8,8 @@
 
 ## 目录
 
+- 2026-08-21 — 导入备份后图片丢失
+- 2026-08-21 — Android 导入备份 Permission denied
 - 2026-08-21 — 水滴打字后隐藏；编辑模式偏 1–2px
 - 2026-08-21 — 同一块连续打字软换行不上浮
 - 2026-08-21 — 列表块行尾水滴手柄与光标错位
@@ -64,6 +66,18 @@
 ---
 
 ## 清单
+
+### 2026-08-21 — 导入备份后图片丢失
+- **现象**：备份导入后文档在，`{id}_assets/` 里的图片空白
+- **根因**：备份设计含图片；但 Android `Directory.list` 常列不出媒体子目录/png。仅拷 `.md` 也会显示成功
+- **修复要点**：Android 用 Java `File.listFiles` 递归复制；导入后再按 Markdown `![](./{id}_assets/…)` **点名补拷**。API 33+ 还须 `READ_MEDIA_IMAGES`（不能只靠所有文件访问）。**禁止**假设 dart:io 列举公共目录一定能看到 png
+- **相关**：`data_backup_service.dart`、`MainActivity.java`、`test/data_backup_service_test.dart`
+
+### 2026-08-21 — Android 导入备份 Permission denied
+- **现象**：release 重装后从 `Download/文档备份/.../user_preferences.json` 导入，`PathAccessException` / `errno = 13`
+- **根因**：Android 11+ 分区存储。`File.copy` 读不了公共目录里「非本安装创建」的文件；manifest 只声明了 maxSdk 32 的 `READ_EXTERNAL_STORAGE`，API 33+ 等于没权限。卸 debug 再装 release 会丢掉文件归属
+- **修复要点**：API 30+ 须 `MANAGE_EXTERNAL_STORAGE` 并在导入/导出前打开系统授权页等到结果。复制用 `copyFileReplacing`（先删目标，copy 失败再读写字节）。**禁止**在 Android 11+ 只靠 `READ_EXTERNAL_STORAGE` 去 `File.copy` Downloads 里的备份
+- **相关**：`MainActivity.java`、`android_storage_permission.dart`、`data_backup_service.dart`、`test/data_backup_service_test.dart`
 
 ### 2026-08-21 — 水滴打字后隐藏；编辑模式偏 1–2px
 - **现象**：实时模式点选后水滴一直跟着打字；编辑模式水滴比光标提前约 1–2px

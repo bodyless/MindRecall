@@ -32,4 +32,9 @@ void main() {
     expect(trampoline.contains('RESULT_CANCELED'), isTrue);
     expect(trampoline.contains('finish()'), isTrue);
   });
+
+  test('Android 11+ 声明 MANAGE_EXTERNAL_STORAGE 以便导入公共目录备份', () {
+    expect(manifest.contains('MANAGE_EXTERNAL_STORAGE'), isTrue);
+    expect(manifest.contains('READ_MEDIA_IMAGES'), isTrue);
+  });
 }

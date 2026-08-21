@@ -87,17 +87,75 @@ void main() {
     );
   });
 
-  test('import restores memos from backup root', () async {
+  test('import restores memos and overwrites existing preferences', () async {
     final backupRoot = Directory(p.join(tempRoot.path, 'MindRecall_Backup_x'));
     final backupMemos = Directory(p.join(backupRoot.path, 'MindRecall'));
     await backupMemos.create(recursive: true);
-    await File(p.join(backupMemos.path, '222.md')).writeAsString('导入\n\n内容');
+    await File(p.join(backupMemos.path, '222.md')).writeAsString(
+      '导入\n\n![图](./222_assets/pic.png)',
+    );
+    final backupAssets = Directory(p.join(backupMemos.path, '222_assets'));
+    await backupAssets.create();
+    await File(p.join(backupAssets.path, 'pic.png')).writeAsBytes([9, 8, 7]);
+    await File(p.join(backupRoot.path, 'user_preferences.json')).writeAsString(
+      '{"themeMode":"dark","localeCode":"en","fontSize":"large"}',
+    );
 
     await File(p.join(memosDir.path, 'old.md')).writeAsString('旧');
+    await File(p.join(prefsHome.path, 'user_preferences.json')).writeAsString(
+      '{"themeMode":"light","localeCode":"zh","fontSize":"small"}',
+    );
 
     final result = await backup.importFromDirectory(backupRoot.path);
     expect(result.memoFileCount, 1);
+    expect(result.includedPreferences, isTrue);
     expect(File(p.join(memosDir.path, '222.md')).existsSync(), isTrue);
     expect(File(p.join(memosDir.path, 'old.md')).existsSync(), isFalse);
+    expect(
+      File(p.join(memosDir.path, '222_assets', 'pic.png')).readAsBytesSync(),
+      [9, 8, 7],
+    );
+    expect(prefsService.preferences.themeMode, ThemeMode.dark);
+    expect(prefsService.preferences.localeCode, 'en');
+  });
+
+  test('copyFileReplacing 覆盖已存在的目标文件', () async {
+    final source = File(p.join(tempRoot.path, 'src.json'));
+    final dest = File(p.join(tempRoot.path, 'dest.json'));
+    await source.writeAsString('new');
+    await dest.writeAsString('old');
+    await copyFileReplacing(source, dest);
+    expect(await dest.readAsString(), 'new');
+  });
+
+  test('localAssetRelativePathsFromMarkdown 取出相对资源路径', () {
+    expect(
+      localAssetRelativePathsFromMarkdown(
+        '文\n\n![a](./111_assets/x.png)\n![b](222_assets/y.jpg)',
+      ),
+      ['111_assets/x.png', '222_assets/y.jpg'],
+    );
+  });
+
+  test('copyReferencedBackupAssets 在目录列举漏掉资源时仍能补拷', () async {
+    final source = Directory(p.join(tempRoot.path, 'src_memos'));
+    final dest = Directory(p.join(tempRoot.path, 'dest_memos'));
+    await source.create();
+    await dest.create();
+    await File(p.join(source.path, '333.md')).writeAsString(
+      '![p](./333_assets/a.png)',
+    );
+    await Directory(p.join(source.path, '333_assets')).create();
+    await File(p.join(source.path, '333_assets', 'a.png')).writeAsBytes([4, 5]);
+    // 只拷了正文，模拟 Android 未列出媒体目录。
+    await File(p.join(dest.path, '333.md')).writeAsString(
+      '![p](./333_assets/a.png)',
+    );
+
+    await copyReferencedBackupAssets(source, dest);
+    expect(
+      File(p.join(dest.path, '333_assets', 'a.png')).readAsBytesSync(),
+      [4, 5],
+    );
   });
 }

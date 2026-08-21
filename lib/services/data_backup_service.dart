@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'android_storage_permission.dart';
 import 'app_storage_service.dart';
 import 'memo_trash_service.dart';
 import 'user_preferences_service.dart';
@@ -49,7 +50,7 @@ class DataBackupService {
 
     final sourceMemos = await _appStorage.storageDirectory();
     final destMemos = Directory(p.join(backupRoot.path, memosFolderName));
-    final memoCount = await _copyDirectory(sourceMemos, destMemos);
+    final memoCount = await _copyMemosDirectory(sourceMemos, destMemos);
 
     final prefsSource = await prefsService.preferencesFile();
     var includedPrefs = false;
@@ -58,15 +59,16 @@ class DataBackupService {
         backupRoot.path,
         UserPreferencesService.fileName,
       );
-      await prefsSource.copy(prefsDest);
+      await copyFileReplacing(prefsSource, File(prefsDest));
       includedPrefs = true;
     } else {
       // 无文件时仍写出当前内存配置，保证备份完整。
       await prefsService.save(prefsService.preferences);
       final refreshed = await prefsService.preferencesFile();
       if (await refreshed.exists()) {
-        await refreshed.copy(
-          p.join(backupRoot.path, UserPreferencesService.fileName),
+        await copyFileReplacing(
+          refreshed,
+          File(p.join(backupRoot.path, UserPreferencesService.fileName)),
         );
         includedPrefs = true;
       }
@@ -94,13 +96,12 @@ class DataBackupService {
 
     final targetMemos = await _appStorage.storageDirectory();
     await _clearDirectoryContents(targetMemos);
-    final memoCount = await _copyDirectory(sourceMemos, targetMemos);
+    final memoCount = await _copyMemosDirectory(sourceMemos, targetMemos);
 
     var includedPrefs = false;
     if (prefsFile != null && await prefsFile.exists()) {
       final dest = await prefsService.preferencesFile();
-      await dest.parent.create(recursive: true);
-      await prefsFile.copy(dest.path);
+      await copyFileReplacing(prefsFile, dest);
       await prefsService.load();
       includedPrefs = true;
     }
@@ -152,6 +153,18 @@ class DataBackupService {
         '${two(now.hour)}${two(now.minute)}${two(now.second)}';
   }
 
+  /// 复制文档目录（含 `{id}_assets/` 图片）。Android 优先走 Java listFiles。
+  Future<int> _copyMemosDirectory(Directory source, Directory destination) async {
+    final nativeCount = await AndroidStoragePermission.copyDirectoryTree(
+      sourcePath: source.path,
+      destPath: destination.path,
+      skipName: MemoTrashService.folderName,
+    );
+    final memoCount = nativeCount ?? await _copyDirectory(source, destination);
+    await copyReferencedBackupAssets(source, destination);
+    return memoCount;
+  }
+
   /// 复制目录；返回复制的备忘录正文文件数（`.md` / `.txt`）。
   Future<int> _copyDirectory(Directory source, Directory destination) async {
     if (!await source.exists()) {
@@ -169,17 +182,29 @@ class DataBackupService {
       if (name == MemoTrashService.folderName) {
         continue;
       }
-      if (entity is Directory) {
+      final type = FileSystemEntity.typeSync(entity.path, followLinks: false);
+      if (type == FileSystemEntityType.directory) {
         memoFiles += await _copyDirectory(
-          entity,
+          Directory(entity.path),
           Directory(p.join(destination.path, name)),
         );
-      } else if (entity is File) {
+      } else if (type == FileSystemEntityType.file) {
         final lower = name.toLowerCase();
-        if (lower.endsWith('.md') || lower.endsWith('.txt')) {
+        final isMemo = lower.endsWith('.md') || lower.endsWith('.txt');
+        if (isMemo) {
           memoFiles++;
         }
-        await entity.copy(p.join(destination.path, name));
+        try {
+          await copyFileReplacing(
+            File(entity.path),
+            File(p.join(destination.path, name)),
+          );
+        } on FileSystemException {
+          // 媒体文件可能列得出但读不了；后面按 Markdown 引用再补拷。
+          if (isMemo) {
+            rethrow;
+          }
+        }
       }
     }
     return memoFiles;
@@ -200,6 +225,65 @@ class DataBackupService {
       } catch (_) {
         // 尽量清空；个别锁定文件跳过，后续复制可覆盖。
       }
+    }
+  }
+}
+
+/// 覆盖复制文件。Android 上 [File.copy] 对公共目录里「非本安装创建」的文件常 EACCES，
+/// 先删目标再 copy；仍失败则读写字节。调用方须已具备可读源文件的存储权限。
+Future<void> copyFileReplacing(File source, File dest) async {
+  await dest.parent.create(recursive: true);
+  if (await dest.exists()) {
+    await dest.delete();
+  }
+  try {
+    await source.copy(dest.path);
+  } on FileSystemException {
+    final bytes = await source.readAsBytes();
+    await dest.writeAsBytes(bytes, flush: true);
+  }
+}
+
+/// 从 Markdown 取出指向 `{id}_assets/` 的相对路径（去掉开头 `./`）。
+List<String> localAssetRelativePathsFromMarkdown(String markdown) {
+  final matches = RegExp(
+    r'!\[[^\]]*\]\((?:\./)?([^)\s]+_assets/[^)\s]+)\)',
+  ).allMatches(markdown);
+  return [
+    for (final match in matches) match.group(1)!.replaceAll(r'\', '/'),
+  ];
+}
+
+/// 按正文里的 `./{id}_assets/…` 引用补拷，不依赖 Directory.list 是否列出媒体目录。
+Future<void> copyReferencedBackupAssets(
+  Directory source,
+  Directory destination,
+) async {
+  if (!await destination.exists()) {
+    return;
+  }
+  await for (final entity in destination.list(
+    recursive: false,
+    followLinks: false,
+  )) {
+    if (entity is! File) {
+      continue;
+    }
+    final lower = entity.path.toLowerCase();
+    if (!lower.endsWith('.md') && !lower.endsWith('.txt')) {
+      continue;
+    }
+    final markdown = await entity.readAsString();
+    for (final relative in localAssetRelativePathsFromMarkdown(markdown)) {
+      final destFile = File(p.join(destination.path, relative));
+      if (await destFile.exists() && await destFile.length() > 0) {
+        continue;
+      }
+      final srcFile = File(p.join(source.path, relative));
+      if (!await srcFile.exists()) {
+        continue;
+      }
+      await copyFileReplacing(srcFile, destFile);
     }
   }
 }

@@ -94,6 +94,7 @@
     }
   },
   "backupPickCancelled": "Cancelled",
+  "storageAllFilesAccessRequired": "Allow All files access in system settings, then try again.",
   "fontSizeSmall": "S",
   "fontSizeMedium": "M",
   "fontSizeLarge": "L",

@@ -223,6 +223,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get backupPickCancelled => '已取消';
 
   @override
+  String get storageAllFilesAccessRequired => '请在系统设置中允许「所有文件访问」后再试。';
+
+  @override
   String get fontSizeSmall => '小';
 
   @override

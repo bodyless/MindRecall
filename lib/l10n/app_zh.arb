@@ -120,6 +120,7 @@
     }
   },
   "backupPickCancelled": "已取消",
+  "storageAllFilesAccessRequired": "请在系统设置中允许「所有文件访问」后再试。",
   "fontSizeSmall": "小",
   "fontSizeMedium": "中",
   "fontSizeLarge": "大",

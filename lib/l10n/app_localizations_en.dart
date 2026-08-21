@@ -227,6 +227,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get backupPickCancelled => 'Cancelled';
 
   @override
+  String get storageAllFilesAccessRequired =>
+      'Allow All files access in system settings, then try again.';
+
+  @override
   String get fontSizeSmall => 'S';
 
   @override
