@@ -140,6 +140,60 @@ abstract class AppLocalizations {
   /// **'新建'**
   String get newMemo;
 
+  /// No description provided for @newFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建文件'**
+  String get newFile;
+
+  /// No description provided for @newFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建文件夹'**
+  String get newFolder;
+
+  /// No description provided for @goToParentDirectory.
+  ///
+  /// In zh, this message translates to:
+  /// **'返回上级目录'**
+  String get goToParentDirectory;
+
+  /// No description provided for @createFolderTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'新建文件夹'**
+  String get createFolderTitle;
+
+  /// No description provided for @renameFolderTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名文件夹'**
+  String get renameFolderTitle;
+
+  /// No description provided for @folderNameLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹名'**
+  String get folderNameLabel;
+
+  /// No description provided for @folderNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入文件夹名称'**
+  String get folderNameHint;
+
+  /// No description provided for @deleteFolderTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件夹'**
+  String get deleteFolderTitle;
+
+  /// No description provided for @deleteFolderConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确定删除「{title}」及其全部内容吗？可在回收站恢复。'**
+  String deleteFolderConfirm(String title);
+
   /// No description provided for @collapseSidebar.
   ///
   /// In zh, this message translates to:
@@ -211,6 +265,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'重命名'**
   String get rename;
+
+  /// No description provided for @moveTo.
+  ///
+  /// In zh, this message translates to:
+  /// **'移动到'**
+  String get moveTo;
+
+  /// No description provided for @setFolderColor.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置颜色'**
+  String get setFolderColor;
+
+  /// No description provided for @clearFolderColor.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除颜色'**
+  String get clearFolderColor;
+
+  /// No description provided for @folderColorTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置颜色'**
+  String get folderColorTitle;
+
+  /// No description provided for @setFolderColorFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置颜色失败：{error}'**
+  String setFolderColorFailed(String error);
+
+  /// No description provided for @moveToTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'移动到'**
+  String get moveToTitle;
+
+  /// No description provided for @moveToRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'根目录'**
+  String get moveToRoot;
 
   /// No description provided for @delete.
   ///
@@ -461,8 +557,32 @@ abstract class AppLocalizations {
   /// No description provided for @importConfirmMessage.
   ///
   /// In zh, this message translates to:
-  /// **'导入将覆盖当前本地文档与用户配置，是否继续？'**
+  /// **'请选择导入方式。'**
   String get importConfirmMessage;
+
+  /// No description provided for @importModeMerge.
+  ///
+  /// In zh, this message translates to:
+  /// **'合并数据'**
+  String get importModeMerge;
+
+  /// No description provided for @importModeMergeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将备份数据合并入本地数据。'**
+  String get importModeMergeHint;
+
+  /// No description provided for @importModeOverwrite.
+  ///
+  /// In zh, this message translates to:
+  /// **'覆盖数据'**
+  String get importModeOverwrite;
+
+  /// No description provided for @importModeOverwriteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将备份数据替换本地数据，可能会有文件被删除。'**
+  String get importModeOverwriteHint;
 
   /// No description provided for @exportFailed.
   ///
@@ -703,6 +823,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'重命名失败：{error}'**
   String renameFailed(String error);
+
+  /// No description provided for @moved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移动'**
+  String get moved;
+
+  /// No description provided for @moveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'移动失败：{error}'**
+  String moveFailed(String error);
 
   /// No description provided for @revealFailed.
   ///

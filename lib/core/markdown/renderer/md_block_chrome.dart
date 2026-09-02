@@ -134,49 +134,59 @@ abstract final class MdBlockChrome {
     final iconColor = visible
         ? (checked ? (accentColor ?? foreground) : foreground)
         : Colors.transparent;
-    final lineHeight = prefixLineHeight(resolved);
-    final iconSize =
-        taskIconSize > lineHeight ? lineHeight : taskIconSize;
-    return SizedBox(
-      width: taskPrefixWidth,
-      height: lineHeight,
-      child: Stack(
-        alignment: Alignment.centerLeft,
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Transform.translate(
-            offset: const Offset(0, taskIconOpticalYOffset),
-            child: Icon(
-              checked ? Icons.check_box : Icons.check_box_outline_blank,
-              size: iconSize,
-              color: iconColor,
-            ),
-          ),
-          // 预览选区复制仍需 ☐/☑ 字符；不影响行高。
-          IgnorePointer(
-            child: Text(
-              checked ? taskCheckedPrefix : taskUncheckedPrefix,
-              style: const TextStyle(
-                color: Colors.transparent,
-                fontSize: 0.01,
-                height: 1,
+    return Builder(
+      builder: (context) {
+        final textScaler = MediaQuery.textScalerOf(context);
+        final lineHeight =
+            prefixLineHeight(resolved, textScaler: textScaler);
+        final scaledIcon = textScaler.scale(taskIconSize);
+        final iconSize =
+            scaledIcon > lineHeight ? lineHeight : scaledIcon;
+        return SizedBox(
+          width: taskPrefixWidth,
+          height: lineHeight,
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Transform.translate(
+                offset: const Offset(0, taskIconOpticalYOffset),
+                child: Icon(
+                  checked ? Icons.check_box : Icons.check_box_outline_blank,
+                  size: iconSize,
+                  color: iconColor,
+                ),
               ),
-            ),
+              // 预览选区复制仍需 ☐/☑ 字符；不影响行高。
+              IgnorePointer(
+                child: Text(
+                  checked ? taskCheckedPrefix : taskUncheckedPrefix,
+                  style: const TextStyle(
+                    color: Colors.transparent,
+                    fontSize: 0.01,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   /// 与 [MdBlockStyles.strutFor] 一致的行高，供勾选前缀槽对齐正文。
-  static double prefixLineHeight(TextStyle? style) {
+  ///
+  /// 须乘 [textScaler]：设置里「小/大」字号走 MediaQuery 缩放，图标槽
+  /// 若不缩放会与同行 Text 错位；无序/有序前缀是 Text，会自动跟着缩放。
+  static double prefixLineHeight(
+    TextStyle? style, {
+    TextScaler textScaler = TextScaler.noScaling,
+  }) {
     final resolved = style ?? const TextStyle();
     final fontSize = resolved.fontSize ?? 14.0;
-    final height = resolved.height;
-    if (height != null) {
-      return fontSize * height;
-    }
-    return fontSize;
+    final height = resolved.height ?? 1.0;
+    return textScaler.scale(fontSize) * height;
   }
 
   /// 标题「无标题」与空正文提示共用的灰色 hint 样式。

@@ -8,6 +8,16 @@
 
 ## 目录
 
+- 2026-09-02 — 打开含网络图文档 HandshakeException / ANR
+- 2026-09-02 — 正文转列表行距错；实时比预览疏
+- 2026-08-30 — 冷启动侧栏未应用 session 置顶
+- 2026-08-29 — 收键盘后点击正文 ANR
+- 2026-08-29 — 切篇不继承光标；收键盘后可拖长段
+- 2026-08-28 — 侧栏文件夹图标与名称上下不对齐
+- 2026-08-22 — 导入空备份清空本地文档
+- 2026-08-22 — 有序项换型后后续序号未重计
+- 2026-08-22 — 块首删除合并未保持上方格式
+- 2026-08-22 — 勾选框在小/大字号与正文错位
 - 2026-08-21 — flutter install 找不到 app-release.apk
 - 2026-08-21 — 导入备份后图片丢失
 - 2026-08-21 — Android 导入备份 Permission denied
@@ -67,6 +77,66 @@
 ---
 
 ## 清单
+
+### 2026-09-02 — 打开含网络图文档 HandshakeException / ANR
+- **现象**：打开文档后 debug 崩并断连，控制台 `HandshakeException: Connection terminated during handshake`；MIUI 上伴随 ANR / signal 3
+- **根因**：正文里的 `http(s)` 图用裸 `Image.network`，TLS 握手失败会经 Image 报到 `FlutterError`。侧栏 `ListTile.onTap` 里同步 `_dropEditorFocus()`（unfocus + setState）会拆掉正在处理手势的列表行
+- **修复要点**：网络/本地图必须带 `errorBuilder`，失败只显示 alt/src。换篇丢焦点须等出手势回调（`Duration.zero`）再 `unfocus`/`setState`。**禁止**在侧栏 onTap 同步拆焦点树
+- **相关**：`md_block_renderer.dart`、`memo_editor_screen.dart`、`test/live_image_delete_and_empty_chrome_test.dart`
+
+### 2026-09-02 — 正文转列表行距错；实时比预览疏
+- **现象**：正文换行后立刻改成列表，列表项之间行距宽、正文与列表之间反而窄（像段内换行）；切到其它模式再回来才恢复。同样内容在实时模式比预览更疏（如分割线）。
+- **根因**：Enter 给前一段打了 `continuesWithNext`，改块类型时没清；`bottomSpacingFor` / `slotPaddingFor` 只看该 flag。实时每块还有 2px 上下 slot padding、顶边距 12（预览 8）。
+- **修复要点**：换型后走 `syncParagraphFlowFlags`；间距函数必须看下一块类型，过期 flow 不能当段内行距。连续列表用 `listItemGap`。实时垂直 slot padding 为 0，顶边距与预览共用 `editorBodyTopPadding`。**禁止**只信 `continuesWithNext` 而不看邻居块类型。
+- **相关**：`md_block_styles.dart`、`live_session_ops.dart`、`live_markdown_editor.dart`、`md_blocks_preview.dart`、`test/live_block_ops_test.dart`、`test/live_session_ops_test.dart`
+
+### 2026-08-30 — 冷启动侧栏未应用 session 置顶
+- **现象**：打开 App 后本应置顶的文件/文件夹有时不置顶；再手动置顶另一项后，原先的置顶状态又全部回来
+- **根因**：`SessionMemoPinStore.load` 给 `session_cache` 读盘加了 300ms timeout；超时后 `loadPinsAndList` 把工作区置顶清成空列表去排序，但底层 cache 仍会加载成功，之后任意一次 toggle 用完整列表重排
+- **修复要点**：启动必须等 session 置顶读完再画侧栏，**禁止**用短 timeout 放弃置顶。读失败时仍以 pin store 当前内存为准，**禁止** catch 后写死空列表（会把已读到的置顶丢掉）
+- **相关**：`memo_workspace_controller.dart`、`test/memo_workspace_controller_test.dart`、`test/widget_test.dart`
+
+### 2026-08-29 — 收键盘后点击正文 ANR
+- **现象**：收起输入法后再点正文，进程被杀（MIUI ANR / signal 3），debug 断连
+- **根因**：失焦时列表槽才挂 `InkWell`，`onTap` 里同步 `requestFocus` 让 `ListenableBuilder` 当场拆掉正在处理手势的 `InkWell`；IME `didChangeMetrics` 里同步 `unfocus`/`setState` 与收键盘动画叠在一起
+- **修复要点**：活动块列表槽**始终** `InkWell`，聚焦后由上层 Overlay 吃点击，禁止随焦点换树。同块激活把 `restoreFocus` 放到帧末。收 IME 同一轮只丢一次焦点，且 `unfocus` 放在 post-frame。**禁止**在手势回调里同步拆掉命中目标
+- **相关**：`live_markdown_editor.dart`、`memo_editor_screen.dart`、`test/live_empty_body_hint_test.dart`
+
+### 2026-08-29 — 切篇不继承光标；收键盘后可拖长段
+- **现象**：打开已有文档会带上上一篇的光标；收起输入法后光标仍在，长段很难上下拖
+- **根因**：Focus 挂在壳层 session 上，换篇只换文本；`_resumeEditorFocus` 不认 memoId；IME 收起不清焦点；Live Overlay 叠在 ListView 上仍命中
+- **修复要点**：resume 只对 suspend 时同一 `memoId` 且未被搜索跳转禁止。换篇 `_dropEditorFocus`。用户收 IME 用 inset 下落 unfocus，禁止「hasFocus 且 inset≈0」。失焦 Overlay `IgnorePointer`，活动块列表槽可点回。**禁止**清 `_activeBlockId` 当拖动方案；**禁止**用 hasFocus 否决侧滑
+- **相关**：`mode_input_session.dart`、`memo_editor_screen.dart`、`live_markdown_editor.dart`、`test/mode_input_session_test.dart`、`test/live_empty_body_hint_test.dart`
+
+### 2026-08-28 — 侧栏文件夹图标与名称上下不对齐
+- **现象**：侧栏文件夹图标相对文件夹名偏上/偏下，文件行正常
+- **根因**：文件夹副标题写成空字符串但仍渲染 `SizedBox(2)` + `Text('')`，行高仍是两行；`Row` 把图标按两行垂直居中，看起来没和名称对齐
+- **修复要点**：文件夹用目录 `stat.modified` 当 `updatedAt`，第二行与文件同一套时间格式。空副标题必须不占位（不要留空 `Text`）。**禁止**用空字符串「隐藏」副标题却仍走两行布局
+- **相关**：`memo_folder.dart`、`memo_file_panel.dart`、`memo_file_panel_logic.dart`、`test/memo_file_panel_logic_test.dart`、`test/memo_storage_service_test.dart`
+
+### 2026-08-22 — 导入空备份清空本地文档
+- **现象**：导入空文件列表会把应用里已有文档全部清掉
+- **根因**：`importFromDirectory` 无条件 `_clearDirectoryContents`，再拷备份；空备份拷 0 个文件后本地已空
+- **修复要点**：导入确认必须二选一「合并 / 覆盖」，**默认合并**。合并按文件名拷贝（同名覆盖、新名添加），禁止先清空。覆盖才清空再写入。**禁止**导入默认走清空
+- **相关**：`data_backup_service.dart`、`import_backup_dialog.dart`、`test/data_backup_service_test.dart`、`test/import_backup_dialog_test.dart`
+
+### 2026-08-22 — 有序项换型后后续序号未重计
+- **现象**：有序列表 `1.` `2.` 时把第 1 项改成无序/正文，第 2 项仍显示 `2.`，应为 `1.`
+- **根因**：工具栏换型只在新块是 `OrderedBlock` 时 `renumberOrderedBlocksFrom`；有序改为其它类型不重编号
+- **修复要点**：换型后走 `renumberOrderedBlocksAround`：切断连续段则后段从 `1.` 起，接上两段则整段重排。**禁止**只判断「当前块变成了有序」
+- **相关**：`block_ops.dart`、`live_markdown_editor.dart`、`test/live_block_ops_test.dart`
+
+### 2026-08-22 — 块首删除合并未保持上方格式
+- **现象**：标题上方有空行时，光标点在标题最前端再按 IME 删除，标题上移；有时退化为正文，有时多出空行
+- **根因**：块首 Backspace 把文本接到上一块时，`copyBlockInlineMarkdown` 不写标题/代码（原样返回），当前块仍被删掉导致丢字/空标题残留；IME 清空与 KeyEvent 还会连打两次
+- **修复要点**：块首删除统一走 `mergeCurrentBlockIntoPrevious`：上一块须 `supportsPlainEditing`，文本接到其末尾并**保留上一块类型**，再删当前块。原子块上删除无效。`copyBlockInlineMarkdown` 必须覆盖 Heading/Code。IME 整块清空用 formatter 拒绝并与 KeyEvent 互斥，禁止两路各合一次
+- **相关**：`live_session_ops.dart`、`block_ops.dart`、`live_markdown_editor.dart`、`md_block_editor_field.dart`、`test/live_session_ops_test.dart`
+
+### 2026-08-22 — 勾选框在小/大字号与正文错位
+- **现象**：字体「小」或「大」时勾选图标相对后续正文略微上下错位；无序/有序列表前缀正常
+- **根因**：勾选前缀槽高按未缩放 `fontSize * height` 计算，图标 size 固定 18；正文与 `•`/`1.` 是 Text，会跟 MediaQuery `textScaler` 缩放
+- **修复要点**：勾选槽高与图标 size 必须乘 `MediaQuery.textScalerOf`。禁止按裸 `TextStyle.fontSize` 当行高。无序/有序是 Text 不必手写缩放
+- **相关**：`md_block_chrome.dart`、`test/md_block_chrome_test.dart`
 
 ### 2026-08-21 — flutter install 找不到 app-release.apk
 - **现象**：自定义 APK 名为 `mind_recall_<version>_<debug/release>.apk` 后，`flutter install` 仍访问 `build/app/outputs/flutter-apk/app-release.apk` 并失败

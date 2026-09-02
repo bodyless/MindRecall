@@ -7,6 +7,12 @@ import 'app_storage_service.dart';
 import 'memo_trash_service.dart';
 import 'user_preferences_service.dart';
 
+/// 导入策略：合并按文件名添加/覆盖同名；覆盖先清空本地再写入备份。
+enum DataBackupImportMode {
+  merge,
+  overwrite,
+}
+
 /// 导出 / 导入结果。
 final class DataBackupResult {
   const DataBackupResult({
@@ -84,7 +90,13 @@ class DataBackupService {
   /// 从备份目录导入。支持：
   /// - 完整备份根（含 `MindRecall/` + 可选 `user_preferences.json`）
   /// - 直接选中 `MindRecall/` 文档目录
-  Future<DataBackupResult> importFromDirectory(String selectedPath) async {
+  ///
+  /// [mode] 默认 [DataBackupImportMode.merge]：按文件名拷贝，同名覆盖、新名添加，
+  /// 空备份不会清空本地文档。 [DataBackupImportMode.overwrite] 先清空再写入。
+  Future<DataBackupResult> importFromDirectory(
+    String selectedPath, {
+    DataBackupImportMode mode = DataBackupImportMode.merge,
+  }) async {
     final selected = Directory(selectedPath);
     if (!await selected.exists()) {
       throw FileSystemException('备份目录不存在', selectedPath);
@@ -95,7 +107,9 @@ class DataBackupService {
     final prefsFile = resolved.prefsFile;
 
     final targetMemos = await _appStorage.storageDirectory();
-    await _clearDirectoryContents(targetMemos);
+    if (mode == DataBackupImportMode.overwrite) {
+      await _clearDirectoryContents(targetMemos);
+    }
     final memoCount = await _copyMemosDirectory(sourceMemos, targetMemos);
 
     var includedPrefs = false;

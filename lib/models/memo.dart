@@ -35,13 +35,14 @@ class Memo {
   Memo copyWith({
     String? title,
     String? content,
+    String? filePath,
     DateTime? updatedAt,
   }) {
     return Memo(
       id: id,
       title: title ?? this.title,
       content: content ?? this.content,
-      filePath: filePath,
+      filePath: filePath ?? this.filePath,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

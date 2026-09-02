@@ -12,6 +12,7 @@
 |---|---|
 | 包名 | `mind_recall` |
 | Android `applicationId` | `com.wishtech.mind_recall` |
+| 版本 | 唯一源 `pubspec.yaml` 顶层 `version`（`大.小.迭代`）；APK 文件名中的 `versionName` 与设置面板展示同一值 |
 | Android APK 文件名 | 分发用 `mind_recall_<versionName>_<debug\|release>.apk`；`flutter install` 仍读同目录 `app-release.apk`（内容相同，Flutter CLI 写死此名） |
 | 显示名称 | 回念笔记（`lib/app_config.dart` → `kAppDisplayName`） |
 | Dart SDK | `^3.10.3` |
@@ -29,11 +30,12 @@
 
 ### 备忘录与文件
 
-- 每条备忘录 → 一个 `{timestamp}.md` 文件（兼容旧 `.txt`）
-- 存储根目录：**各平台 Downloads 下的 `MindRecall/`**（无法访问 Downloads 时回退到应用 Documents）。Android 11+ 导入公共目录备份须系统「所有文件访问」权限（卸包重装后旧备份不再视为本应用文件）
+- 每条备忘录 → 一个 `{timestamp}.md` 文件（兼容旧 `.txt`），位于 `MindRecall/documents/`（可多层文件夹）
+- 存储根目录：**各平台 Downloads 下的 `MindRecall/`**（无法访问 Downloads 时回退到应用 Documents）。笔记树在 `documents/`，与 `trash/` 分离。Android 11+ 导入公共目录备份须系统「所有文件访问」权限（卸包重装后旧备份不再视为本应用文件）
 - 文件格式：`标题` + 空行 + `正文`（标题为空则整文件为正文）
 - 自动保存（约 800ms debounce）；切换文件 / 切预览前 `flushSave`
-- 新建、重命名（改标题字段）、删除、在资源管理器中显示（Android / 桌面平台）
+- 侧栏浏览当前目录：文件夹（时间戳 id + `{id}.fileconf` 显示名）排在文件前；点进文件夹 / 返回上级；文件夹行显示目录修改时间（格式同文件）；`+` 可新建文件（当前目录，UX 同前）或新建文件夹
+- 新建、重命名（笔记改标题字段；文件夹只改 conf）、设置文件夹颜色（长按与 `⋮` 同一菜单；行左侧色条；写入 `{id}.fileconf` 的 `color`）、移动到已有目录（含根；长按与 `⋮` 同一菜单；搬完侧栏不跟、不切正在编辑的文档）、删除、在资源管理器中显示（文件；Android / 桌面平台）
 
 ### 编辑器三种模式 (`EditorViewMode`)
 
@@ -52,22 +54,23 @@
 
 ### 搜索
 
-- 左侧面板搜索框，空格分词 AND，可选区分大小写
-- 搜索标题 + 正文；结果高亮（`HighlightedText`）；点击跳转到首个匹配处
+- 左侧面板搜索框，空格分词 AND，可选区分大小写；搜索与「选择文档」链接覆盖**全库**，侧栏普通列表只显示当前目录。搜索结果不做移动（须回到目录列表）
+- 搜索标题 + 正文；结果高亮（`HighlightedText`）；点击跳转到首个匹配处并把侧栏当前目录跟到该文件父目录，**不**自动弹出光标 / 键盘
 
 ### 图片
 
-- 选图 → 复制到 `{memoId}_assets/` → 插入 `![alt](./{memoId}_assets/xxx.png)`。导出/导入备份包含该资源目录
-- 预览 / 实时渲染时通过 `MarkdownImageResolver` 解析相对路径（默认 `defaultMemoMarkdownImageResolver`）
+- 选图 → 复制到与 `.md` 同级的 `{memoId}_assets/` → 插入 `![alt](./{memoId}_assets/xxx.png)`。导出/导入备份包含该资源目录
+- 预览 / 实时渲染时通过 `MarkdownImageResolver` 解析相对路径（默认 `defaultMemoMarkdownImageResolver`）。`http(s)` 图走 `Image.network`，须带 `errorBuilder`（TLS `HandshakeException` 等失败显示 alt/src，**禁止**让 Image 把异常抛给 `FlutterError` 把 debug 会话打崩）
 
 ### 其他 UX
 
-- 宽屏（≥720px）左侧可折叠文件栏；窄屏 Drawer（左半屏 + 安全区可边缘滑动；仅系统 IME 可见时禁用侧滑，收起键盘后即使光标仍在也可侧滑）
-- 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`、回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本
-- **本地会话缓存**（`session_cache.json`，应用 support 目录）：当前打开文档、置顶列表；不可随备份迁移
+- 宽屏（≥720px）左侧可折叠文件栏；窄屏 Drawer（左半屏 + 安全区可边缘滑动；仅系统 IME 可见时禁用侧滑；收起键盘后无光标但仍可侧滑）
+- 打开已有文档默认无光标（点一下才有）；同篇开关文件栏恢复刚才的光标；换篇不继承；用户收起输入法后无光标（长段可上下拖）。新建、插入图、系统选区「记录到笔记」仍聚焦正文；搜索跳转只滚到匹配处、不自动出光标
+- 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`；导入须选合并或覆盖，默认合并：按文件名添加或覆盖同名，空备份不清空本地；覆盖则先清空再写入；回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本（`pubspec.yaml` 的 `大.小.迭代`，不含 buildNumber）
+- **本地会话缓存**（`session_cache.json`，应用 support 目录）：当前打开文档、当前侧栏目录、文件置顶与文件夹置顶；不可随备份迁移
+- 侧栏支持置顶（后置顶靠前，左上角深色角标）；当前层顺序为置顶文件夹 → 置顶文件 → 文件夹（建立时间）→ 文件（最后修改时间降序）
+- 删除有内容文档或整棵文件夹 → `MindRecall/trash/`（`manifest.json` 记原父路径；父目录不在则恢复到 `documents/` 根）；空文档直接删除
 - **IME 高度缓存**（`ime_height_cache.json`，应用 support 目录）：按视口分桶记住键盘高度，重启后第一次打开即可套用；换键盘/候选栏导致高度变化时自动改写。不随备份迁移
-- 侧栏支持置顶（后置顶靠前，左上角深色角标）；非置顶项按最后修改时间降序
-- 删除有内容文档 → `MindRecall/trash/`；空文档直接删除
 - 编辑 / 实时 / 预览底边适配系统导航栏（`viewPadding.bottom`）
 - 编辑与实时模式：长文点击底部或同一块连续打字软换行时正文上浮避开键盘（`imeBottomScrollPadding` + 主动滚入 / 换行 nudge）
 - 工具栏支持插入 Markdown 链接 `[文字](url)`：可打开网页或本地文档；插入面板可「选择文档」自动填充。移动端本地链接用**文档标题**，桌面端仍可用 `./文件名.md`；解析时两种格式均支持
@@ -154,18 +157,22 @@ flowchart TB
 
 **Agent 注意**：实时模式按**块**编辑，不是按 TextField 行。从编辑模式进入时，`expandMultilineParagraphsForLive` 会把含 `\n` 的段落拆成每行一块；否则 H2/列表等块级操作会作用于整段。
 
-**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`，连续行之间不加 8px 块间距、不加垂直 slot padding，以匹配预览中的自然行高。
+**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`。连续段落行之间不加块间距。正文 Enter 后立刻改成列表/标题/分割线时须 `syncParagraphFlowFlags` 清掉已过期的 flow 标记，**禁止**只信 `continuesWithNext` 而不看下一块类型（否则正文↔列表会像段内行距，切模式重解析才恢复）。连续列表项用 `listItemGap`（比 `blockGap` 更紧凑）。实时槽位垂直 padding 为 0、顶边距与预览同为 `editorBodyTopPadding`，避免同样内容在实时里更疏。
 
 **Enter 换行**（实时模式）：
 - **段落块**：`_NewBlockEnterFormatter` 在光标处 `splitBlockAt` → `splitMultilineBlockAt`
 - **标题 / 列表 / 引用**（单行块）：同样走 formatter → `insertBlockBelowSingleLine`；物理键盘另由 `Focus.onKeyEvent` 补 Enter → `_insertEmptyBlockBelow` 在下方插入空段落
 - **代码块**：允许输入原始换行，不拆块
 
+**块首删除**（实时模式 Backspace / IME 删除）：光标在当前块第一个字符时，把当前块全文接到**上一文本块**末尾并删除当前块，**保留上一块的块级格式**。上一块为图片/分割线等原子块时删除无效。文档首块仍是取消标题/列表等块级样式。实现为 `mergeCurrentBlockIntoPrevious`；**禁止** `copyBlockInlineMarkdown` 漏写标题/代码导致文本丢失或多出空块。
+
+**有序列表编号**：连续 [OrderedBlock] 为一段，从 `1.` 起。工具栏把某项改成正文/无序/标题等会切断该段，后段必须 `renumberOrderedBlocksAround` 从 `1.` 重计。**禁止**只在「新块是有序」时重编号。
+
 **Agent 注意**：实时编辑器使用**固定 Overlay 单例** `MdBlockEditorField`（`live-active-editor` key）+ `LayerLink`/`CompositedTransformFollower` 跟随活动块槽位；块列表为 `CustomScrollView` + `SliverList` 虚拟化。活动块仅占位布局，**不可**按 block.id 重建 TextField，否则 Android 会失焦。标题↔列表切换时 chromeless 层始终用 `Row + Expanded` 包裹输入框，避免结构重挂载失焦。换块后若短暂失焦，父屏会调用 `restoreFocus()`。激活非活动块时须用 `onTapDown` 全局坐标经 `plainOffsetAtGlobalTap` 落点，**禁止**写死 `offset: text.length`。空文档用 `SliverFillRemaining` 承接正文框空白点击（Overlay 仅一行高，点不到空白）；hint 叠在透明空格下方，勿再渲染「…」。
 
 **Agent 注意**：跨模式 SoT 只有 `_contentController`（Markdown 字符串）。正文 **Focus / Scroll / IME·工具栏 session** 分属 `EditInputSession` 与 `LiveInputSession`（`mode_input_session.dart`），**禁止**再合并成单一 `_contentFocusNode`。
 
-**Agent 注意**：列表前缀 `•  `、有序 `$marker `、引用/代码缩进须统一走 `MdBlockChrome` / `MdBlockChromeMetrics`；无序/有序/勾选共用 `listPrefixSlotWidth`（有序右对齐）；**禁止**在 renderer、chromeless、预览选区镜像三处各写一份 magic string/number。
+**Agent 注意**：列表前缀 `•  `、有序 `$marker `、引用/代码缩进须统一走 `MdBlockChrome` / `MdBlockChromeMetrics`；无序/有序/勾选共用 `listPrefixSlotWidth`（有序右对齐）；勾选图标槽高与 size 须乘 `textScaler`（设置「小/大」字号），勿按未缩放 `fontSize` 当行高。**禁止**在 renderer、chromeless、预览选区镜像三处各写一份 magic string/number。
 
 ---
 
@@ -227,29 +234,36 @@ lib/
 │   │       ├── markdown_toolbar.dart  # 编辑/实时两套工具栏
 │   │       ├── keyboard_aware_markdown_toolbar.dart  # 窄屏贴键盘工具栏
 │   │       ├── rename_memo_dialog.dart
+│   │       ├── folder_name_dialog.dart
+│   │       ├── folder_color_dialog.dart
+│   │       ├── move_to_folder_dialog.dart
+│   │       ├── import_backup_dialog.dart
 │   │       ├── trash_restore_dialog.dart
 │   │       ├── link_insert_dialog.dart
 │   │       └── memo_markdown_preview.dart
 │   └── sidebar/
 │       ├── memo_file_panel.dart
-│       └── memo_file_panel_logic.dart  # 搜索态 / 半屏边缘拖动 / 开抽屉 IME 纯逻辑
+│       └── memo_file_panel_logic.dart  # 搜索态 / 当前目录返回上级 / 半屏边缘拖动 / 开抽屉 IME 纯逻辑
 ├── shared/widgets/                    # 跨功能 UI
 │   ├── highlighted_text.dart
+│   ├── rgb_color_picker.dart          # RGB 滑条（文件夹设色可替换）
 │   └── settings_panel.dart
 ├── models/
 │   ├── memo.dart
+│   ├── memo_folder.dart               # 文件夹与当前层条目
 │   ├── memo_search_result.dart
 │   └── user_preferences.dart
 ├── services/
 │   ├── app_storage_service.dart
 │   ├── memo_storage_service.dart
+│   ├── memo_fs_constants.dart        # documents / fileconf / 相对路径
 │   ├── memo_image_service.dart
 │   ├── memo_search_service.dart
 │   ├── user_preferences_service.dart
 │   ├── session_cache_service.dart     # 本地会话缓存（不可迁移）
 │   ├── ime_height_cache_store.dart    # IME 高度应用缓存（support 目录，不可迁移）
-│   ├── data_backup_service.dart       # 文档 + 偏好 导出/导入
-│   ├── memo_trash_service.dart        # 回收站
+│   ├── data_backup_service.dart       # 文档 + 偏好 导出/导入（导入默认合并）
+│   ├── memo_trash_service.dart        # 回收站 + manifest
 │   ├── android_storage_permission.dart
 │   ├── process_text_capture.dart      # 选区文本规范化 / 是否复用空篇
 │   └── android_process_text.dart      # Android PROCESS_TEXT EventChannel
@@ -266,10 +280,14 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── md_blocks_preview_test.dart
 ├── markdown_editor_helper_test.dart
 ├── memo_storage_service_test.dart
+├── folder_color_hex_test.dart
 ├── memo_workspace_controller_test.dart
+├── memo_trash_service_test.dart
+├── session_cache_service_test.dart
 ├── process_text_capture_test.dart
 ├── android_process_text_manifest_test.dart
 ├── android_apk_output_name_test.dart
+├── app_version_test.dart
 ├── memo_search_service_test.dart
 ├── memo_image_service_test.dart
 ├── highlighted_text_test.dart
@@ -283,7 +301,8 @@ scripts/
 .cursor/
 ├── rules/                         # Agent 持久规则
 └── skills/
-    ├── mode-explore/SKILL.md      # 只读探索；交接事实与分叉，不写方案
+    ├── mode-explore/SKILL.md      # 只读探索；建议 patch 或 propose
+    ├── mode-patch/SKILL.md        # 根因已清且无架构隐患时按短方案改工程
     ├── mode-propose/SKILL.md      # 只写 proposes/<name>/{schemes,tasks}.md
     ├── mode-implement/SKILL.md    # 未决为空才落实；按步骤勾选
     └── mode-archive/SKILL.md      # 将完成的方案目录移到 agents/archives
@@ -314,9 +333,9 @@ agents/
 
 解析：`parseMarkdownBlocks()` in `core/markdown/parser/markdown_block_parser.dart`  
 序列化：`serializeMdBlocks()` in `core/markdown/ast/md_block.dart`  
-块编辑辅助：`core/markdown/block_ops.dart`（`editableTextForBlock`、`copyBlockInlineMarkdown` 等）  
-会话纯函数：`core/markdown/live_session_ops.dart`（`prepareLiveBlocksFromMarkdown`、`splitMultilineBlockAt`、`insertBlockBelowSingleLine`）  
-块外壳几何：`md_block_chrome_metrics.dart` + `renderer/md_block_chrome.dart`（renderer / chromeless / 预览选区共用）
+块编辑辅助：`core/markdown/block_ops.dart`（`editableTextForBlock`、`copyBlockInlineMarkdown`、`renumberOrderedBlocksAround` 等）  
+会话纯函数：`core/markdown/live_session_ops.dart`（`prepareLiveBlocksFromMarkdown`、`splitMultilineBlockAt`、`insertBlockBelowSingleLine`、`mergeCurrentBlockIntoPrevious`）  
+块外壳几何：`md_block_chrome_metrics.dart` + `renderer/md_block_chrome.dart`（renderer / chromeless / 预览选区共用；勾选图标行高须乘 `textScaler`）
 
 ### 行内 (`MdInline`)
 
@@ -426,10 +445,13 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 
 ### 工作流模式
 
-- **mode-explore**（`.cursor/skills/mode-explore/SKILL.md`）：显式启用后只读探索，只允许读文件与跟用户互动；**禁止**对仓库做任何增删改。若用户尝试修改，提示使用 **mode-propose**。交接只给可被另一会话消费的事实（同类模式路径、调用链、不确定点与行为分叉），不写方案文件。
-- **mode-propose**（`.cursor/skills/mode-propose/SKILL.md`）：只写 `agents/proposes/<name>/schemes.md`（目标 / 方案 / 已决事项 / 关注点 / 未决事项）与 `tasks.md`（按步骤分组的勾选列表）。设计阶段把行为分叉交给用户拍板；**未决非空不得宣称可落实**。同一目标不够落地时修订该目录。若用户要求改工程目录且合同已闭合，提示使用 **mode-implement**。
-- **mode-implement**（`.cursor/skills/mode-implement/SKILL.md`）：扫描 `agents/proposes/`，默认一次落实一个已闭合方案；先读已决与关注点，再按 `tasks.md` 步骤勾选。接线可做，合同外选择与未决事项视为停手，打回 **mode-propose**，禁止推翻已决或用领域常识补行为。
-- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应**目录**（或遗留单文件）从 `agents/proposes/` 移到 `agents/archives/`。
+- **mode-explore**（`.cursor/skills/mode-explore/SKILL.md`）：显式启用后只读探索，只允许读文件与跟用户互动；**禁止**对仓库做任何增删改。只**建议**下一跳，不能代执行。默认建议 **mode-propose**；仅当本次已写出根因且按该根因落地无架构隐患时才建议 **mode-patch**。→ propose 交事实与分叉；→ patch 在对话里给短方案（现象 / 根因 / 文件与函数 / 回归点），不写 `schemes.md` / `tasks.md`。不改版本号。
+- **mode-patch**（`.cursor/skills/mode-patch/SKILL.md`）：按 explore 短方案改工程（局部修复或优化）。不写 `agents/proposes/`、不归档。根因必须来自上一跳 explore；缺失、仍是假说、或动手后发现分叉/架构面则停手，打回 **mode-explore** 或 **mode-propose**。仍须补测、跑 `scripts/run_unit_tests`；Bug 则双写 `agents/fixed_list.md`。成功交付后将 `pubspec.yaml` 迭代 +1。
+- **mode-propose**（`.cursor/skills/mode-propose/SKILL.md`）：只写 `agents/proposes/<name>/schemes.md`（目标 / 方案 / 已决事项 / 关注点 / 未决事项）与 `tasks.md`（按步骤分组的勾选列表）。设计阶段把行为分叉交给用户拍板；**未决非空不得宣称可落实**。同一目标不够落地时修订该目录。若从 **mode-patch** 打回，把分叉或架构面写入合同。若用户要求改工程目录且合同已闭合，提示使用 **mode-implement**。不改版本号。
+- **mode-implement**（`.cursor/skills/mode-implement/SKILL.md`）：扫描 `agents/proposes/`，默认一次落实一个已闭合方案；先读已决与关注点，再按 `tasks.md` 步骤勾选。接线可做，合同外选择与未决事项视为停手，打回 **mode-propose**，禁止推翻已决或用领域常识补行为。该方案全部勾完且门禁通过后将小版本 +1、迭代置 0。
+- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应**目录**（或遗留单文件）从 `agents/proposes/` 移到 `agents/archives/`。不改版本号。
+
+大版本不由 AI 改。
 
 ### 性能 Timeline 埋点
 
@@ -505,11 +527,13 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 24. 实时加载/Enter 拆块逻辑优先改 `live_session_ops.dart` 并补纯函数单测  
 25. Android IME（卡顿/跳动/留白）：终态约束见 `agents/fixed_list.md` → **2026-08-02 — Android IME：开关卡顿、跳动与留白（整合）**。二次上推：无缓存 nudge+工具栏 120ms 防抖后写入应用缓存；有缓存首次 settle 套用并同拍显栏（`ime_height_cache.dart` / `ime_height_cache_store.dart`）。禁止 MediaQuery.of / 步进正文 UI / 工具栏分帧爬升或跟手显栏 / 大块 IME 进 contentPadding。
 27. 编辑/实时勿共用 FocusNode·ScrollController·hadFocus；用 `EditInputSession` / `LiveInputSession`
-28. 实时模式开抽屉：菜单按钮须等 IME inset 收起（轮询，上限宜短）且抽屉子树 `removeViewInsets(removeBottom)`；边缘侧滑区为半屏+安全区，门禁只认系统 IME inset（勿用 hasFocus/hadFocus 否决；收起键盘后可留光标仍可侧滑）；inset 阈值翻转才 setState；文件 ListView 勿 `primary: true`；宽屏侧栏揭示用动画 `onEnd` 勿裸 Timer
+28. 实时模式开抽屉：菜单按钮须等 IME inset 收起（轮询，上限宜短）且抽屉子树 `removeViewInsets(removeBottom)`；边缘侧滑区为半屏+安全区，门禁只认系统 IME inset（勿用 hasFocus/hadFocus 否决；**收起键盘会丢掉光标**，仍可侧滑）；inset 阈值翻转才 setState；文件 ListView 勿 `primary: true`；宽屏侧栏揭示用动画 `onEnd` 勿裸 Timer
 29. 非活动块激活：`onTapDown` → `plainOffsetAtGlobalTap`；勿写死块末 caret
 30. 实时光标：按列表层 `RenderParagraph` 实测；若段落 plain 尚未跟上 controller，须再等一帧测量，勿把光标钉在旧字后（父级 `_syncToParent` 有 120ms debounce，不能当光标刷新）
 31. Android「记录到笔记」：`PROCESS_TEXT` 必须用 `ProcessTextActivity` trampoline（`NEW_TASK` 打开 `MainActivity` 后立刻 `finish`/`RESULT_CANCELED`）。**禁止** `activity-alias` 到 Flutter `MainActivity`，否则源 App 黑屏卡住
-32. Android 11+ 导入 `Download` 备份：须 `MANAGE_EXTERNAL_STORAGE`（导入/导出前打开系统授权页）。卸包重装后 **禁止** 只靠 `File.copy` 读公共目录文件，会 `Permission denied`。图片在 `{id}_assets/`，导入须 Java `listFiles` + 按 Markdown 引用补拷，并声明 `READ_MEDIA_IMAGES`；**禁止**以为拷了 `.md` 图片就在
+32. Android 11+ 导入 `Download` 备份：须 `MANAGE_EXTERNAL_STORAGE`（导入/导出前打开系统授权页）。卸包重装后 **禁止** 只靠 `File.copy` 读公共目录文件，会 `Permission denied`。图片在 `{id}_assets/`，导入须 Java `listFiles` + 按 Markdown 引用补拷，并声明 `READ_MEDIA_IMAGES`；**禁止**以为拷了 `.md` 图片就在。导入默认 **合并**（`DataBackupImportMode.merge`）：按文件名拷贝，空备份不得 `_clearDirectoryContents`。覆盖须用户显式选择 `overwrite`
+33. 切文档须丢掉壳层 Focus（`_titleFocusNode` / Edit / Live session），`_resumeEditorFocus` 须比对 suspend 时 memoId；搜索跳转禁止 `requestFocus`。Live 失焦 Overlay 须 `IgnorePointer`，勿只藏光标；用户收 IME 用 inset **下落** unfocus，禁止「hasFocus 且 inset≈0」。同一轮收键盘只丢一次焦点，unfocus 放帧末
+34. 活动块列表槽须**始终**挂 `InkWell`（聚焦时由 Overlay 在上层吃点击）。**禁止**随焦点拆掉正在处理 `onTap` 的命中目标，否则 Android/MIUI 会 ANR
 
 ### 撤回 / 重做
 

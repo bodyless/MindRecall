@@ -76,6 +76,7 @@ class MdBlockEditorField extends StatefulWidget {
     this.onTaskToggle,
     this.onTap,
     this.chromeless = false,
+    this.onImeClearAtBlockStart,
   });
 
   final MdBlock block;
@@ -97,6 +98,9 @@ class MdBlockEditorField extends StatefulWidget {
 
   /// 实时 Overlay 模式：不重复渲染列表/引用等块级装饰，仅保留与渲染层对齐的输入框。
   final bool chromeless;
+
+  /// IME 在块首把整块清空时：返回 true 表示拒绝此次编辑（由宿主合并块）。
+  final bool Function()? onImeClearAtBlockStart;
 
   @override
   State<MdBlockEditorField> createState() => _MdBlockEditorFieldState();
@@ -120,6 +124,7 @@ class _MdBlockEditorFieldState extends State<MdBlockEditorField> {
           onTaskToggle: widget.onTaskToggle,
           onTap: widget.onTap,
           chromeless: widget.chromeless,
+          onImeClearAtBlockStart: widget.onImeClearAtBlockStart,
         );
       },
     );
@@ -139,6 +144,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
     this.onTaskToggle,
     this.onTap,
     this.chromeless = false,
+    this.onImeClearAtBlockStart,
   });
 
   final MdBlock block;
@@ -152,6 +158,7 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
   final VoidCallback? onTaskToggle;
   final VoidCallback? onTap;
   final bool chromeless;
+  final bool Function()? onImeClearAtBlockStart;
 
   @override
   Widget build(BuildContext context) {
@@ -225,15 +232,10 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
         decoration: overlayReady
             ? overlayDecoration(fieldDecoration ?? decoration())
             : fieldDecoration,
-        inputFormatters: [
-          // 标题/列表/引用：Enter 在下方插入段落；段落：Enter 在光标处拆块。
-          // 含换行的粘贴走 onPasteMarkdown，避免被 Enter 逻辑吞掉。
-          if (singleLine || splitOnEnter)
-            _NewBlockEnterFormatter(
-              onSplitBlockAt: onSplitBlockAt,
-              onPasteMarkdown: onPasteMarkdown,
-            ),
-        ],
+        inputFormatters: _liveInputFormatters(
+          singleLine: singleLine,
+          splitOnEnter: splitOnEnter,
+        ),
       );
 
       final compactFieldTheme = theme.copyWith(
@@ -355,6 +357,26 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
     };
   }
 
+  /// 块首 IME 清空拦截 + 单行/段落 Enter 拆块。
+  List<TextInputFormatter> _liveInputFormatters({
+    required bool singleLine,
+    required bool splitOnEnter,
+  }) {
+    return [
+      if (onImeClearAtBlockStart != null)
+        _BlockStartImeClearFormatter(
+          onImeClearAtBlockStart: onImeClearAtBlockStart!,
+        ),
+      // 标题/列表/引用：Enter 在下方插入段落；段落：Enter 在光标处拆块。
+      // 含换行的粘贴走 onPasteMarkdown，避免被 Enter 逻辑吞掉。
+      if (singleLine || splitOnEnter)
+        _NewBlockEnterFormatter(
+          onSplitBlockAt: onSplitBlockAt,
+          onPasteMarkdown: onPasteMarkdown,
+        ),
+    ];
+  }
+
   Widget _buildChromelessField({
     required ThemeData theme,
     required Color cursorColor,
@@ -404,13 +426,10 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
         contentPadding: EdgeInsets.zero,
         isCollapsed: true,
       ),
-      inputFormatters: [
-        if (singleLine || splitOnEnter)
-          _NewBlockEnterFormatter(
-            onSplitBlockAt: onSplitBlockAt,
-            onPasteMarkdown: onPasteMarkdown,
-          ),
-      ],
+      inputFormatters: _liveInputFormatters(
+        singleLine: singleLine,
+        splitOnEnter: splitOnEnter,
+      ),
     );
 
     final compactFieldTheme = theme.copyWith(
@@ -477,6 +496,48 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
         ),
     };
   }
+}
+
+class _BlockStartImeClearFormatter extends TextInputFormatter {
+  const _BlockStartImeClearFormatter({
+    required this.onImeClearAtBlockStart,
+  });
+
+  final bool Function() onImeClearAtBlockStart;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (!isBlockStartImeClear(oldValue, newValue)) {
+      return newValue;
+    }
+    if (onImeClearAtBlockStart()) {
+      return oldValue;
+    }
+    return newValue;
+  }
+}
+
+/// IME 在折叠光标位于块首时把整块一次性清空（非从末尾逐字删至空）。
+bool isBlockStartImeClear(
+  TextEditingValue oldValue,
+  TextEditingValue newValue,
+) {
+  if (oldValue.composing.isValid) {
+    return false;
+  }
+  if (!oldValue.selection.isValid || !oldValue.selection.isCollapsed) {
+    return false;
+  }
+  if (oldValue.selection.baseOffset != 0) {
+    return false;
+  }
+  if (oldValue.text.isEmpty) {
+    return false;
+  }
+  return newValue.text.isEmpty;
 }
 
 class _NewBlockEnterFormatter extends TextInputFormatter {

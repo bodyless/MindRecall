@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import 'package:mind_recall/models/memo.dart';
+import 'package:mind_recall/models/memo_folder.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/services/data_backup_service.dart';
+import 'package:mind_recall/services/memo_fs_constants.dart';
 import 'package:mind_recall/services/memo_search_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 import 'package:mind_recall/services/memo_trash_service.dart';
@@ -17,8 +19,9 @@ enum SaveStatus { idle, saving, saved, error }
 /// 工作区磁盘访问，便于单测注入。
 abstract class MemoWorkspaceStore {
   Future<List<Memo>> listMemos();
+  Future<List<MemoDirEntry>> listDirEntries(String relativeParent);
   Future<Memo> loadMemo(String id);
-  Future<Memo> createMemo();
+  Future<Memo> createMemo({String relativeParent = ''});
   Future<Memo> updateMemo({
     required String id,
     required String title,
@@ -26,6 +29,29 @@ abstract class MemoWorkspaceStore {
   });
   Future<Memo> renameMemo({required String id, required String newTitle});
   Future<void> deleteMemo(String id);
+  Future<MemoFolder> createFolder({
+    required String relativeParent,
+    required String displayName,
+  });
+  Future<MemoFolder> renameFolder({
+    required String id,
+    required String newDisplayName,
+  });
+  Future<void> deleteFolder(String id);
+  Future<bool> folderContainsMemo(String folderId, String memoId);
+  Future<String> relativeParentOfPath(String absolutePath);
+  Future<String> relativeDirOfFolder(String directoryPath);
+  Future<bool> isValidRelativeDir(String relativeParent);
+  Future<MemoFolderTreeNode> listFolderTree();
+  Future<Memo> moveMemo({required String id, required String destRelativeDir});
+  Future<MemoFolder> moveFolder({
+    required String id,
+    required String destRelativeDir,
+  });
+  Future<MemoFolder> updateFolderColor({
+    required String id,
+    String? colorHex,
+  });
 }
 
 class DiskMemoWorkspaceStore implements MemoWorkspaceStore {
@@ -38,10 +64,17 @@ class DiskMemoWorkspaceStore implements MemoWorkspaceStore {
   Future<List<Memo>> listMemos() => _storage.listMemos();
 
   @override
+  Future<List<MemoDirEntry>> listDirEntries(String relativeParent) {
+    return _storage.listDirEntries(relativeParent);
+  }
+
+  @override
   Future<Memo> loadMemo(String id) => _storage.loadMemo(id);
 
   @override
-  Future<Memo> createMemo() => _storage.createMemo();
+  Future<Memo> createMemo({String relativeParent = ''}) {
+    return _storage.createMemo(relativeParent: relativeParent);
+  }
 
   @override
   Future<Memo> updateMemo({
@@ -59,16 +92,89 @@ class DiskMemoWorkspaceStore implements MemoWorkspaceStore {
 
   @override
   Future<void> deleteMemo(String id) => _storage.deleteMemo(id);
+
+  @override
+  Future<MemoFolder> createFolder({
+    required String relativeParent,
+    required String displayName,
+  }) {
+    return _storage.createFolder(
+      relativeParent: relativeParent,
+      displayName: displayName,
+    );
+  }
+
+  @override
+  Future<MemoFolder> renameFolder({
+    required String id,
+    required String newDisplayName,
+  }) {
+    return _storage.renameFolder(id: id, newDisplayName: newDisplayName);
+  }
+
+  @override
+  Future<void> deleteFolder(String id) => _storage.deleteFolder(id);
+
+  @override
+  Future<bool> folderContainsMemo(String folderId, String memoId) {
+    return _storage.folderContainsMemo(folderId, memoId);
+  }
+
+  @override
+  Future<String> relativeParentOfPath(String absolutePath) {
+    return _storage.relativeParentOfPath(absolutePath);
+  }
+
+  @override
+  Future<String> relativeDirOfFolder(String directoryPath) {
+    return _storage.relativeDirOfFolder(directoryPath);
+  }
+
+  @override
+  Future<bool> isValidRelativeDir(String relativeParent) {
+    return _storage.isValidRelativeDir(relativeParent);
+  }
+
+  @override
+  Future<MemoFolderTreeNode> listFolderTree() => _storage.listFolderTree();
+
+  @override
+  Future<Memo> moveMemo({
+    required String id,
+    required String destRelativeDir,
+  }) {
+    return _storage.moveMemo(id: id, destRelativeDir: destRelativeDir);
+  }
+
+  @override
+  Future<MemoFolder> moveFolder({
+    required String id,
+    required String destRelativeDir,
+  }) {
+    return _storage.moveFolder(id: id, destRelativeDir: destRelativeDir);
+  }
+
+  @override
+  Future<MemoFolder> updateFolderColor({
+    required String id,
+    String? colorHex,
+  }) {
+    return _storage.updateFolderColor(id: id, colorHex: colorHex);
+  }
 }
 
 /// 置顶与上次打开，便于单测注入。
 abstract class MemoPinStore {
   List<String> get pinnedIds;
+  List<String> get pinnedFolderIds;
   String? get lastOpenedMemoId;
+  String get currentRelativeDir;
 
   Future<void> load();
   Future<void> updateLastOpenedMemoId(String id);
   Future<List<String>> togglePin(String id);
+  Future<List<String>> toggleFolderPin(String id);
+  Future<void> updateCurrentRelativeDir(String relativeDir);
 }
 
 class SessionMemoPinStore implements MemoPinStore {
@@ -81,11 +187,19 @@ class SessionMemoPinStore implements MemoPinStore {
   List<String> get pinnedIds => _cache.cache.pinnedMemoIds;
 
   @override
+  List<String> get pinnedFolderIds => _cache.cache.pinnedFolderIds;
+
+  @override
   String? get lastOpenedMemoId => _cache.cache.lastOpenedMemoId;
 
   @override
+  String get currentRelativeDir => _cache.cache.currentRelativeDir;
+
+  @override
   Future<void> load() async {
-    await _cache.load().timeout(const Duration(milliseconds: 300));
+    // 必须等 session 读完再画侧栏；短 timeout 会让界面当成「无置顶」，
+    // 而磁盘加载仍继续，之后任意一次 toggle 又把全部置顶带回来。
+    await _cache.load();
   }
 
   @override
@@ -97,6 +211,17 @@ class SessionMemoPinStore implements MemoPinStore {
   Future<List<String>> togglePin(String id) async {
     await _cache.togglePin(id);
     return List<String>.from(_cache.cache.pinnedMemoIds);
+  }
+
+  @override
+  Future<List<String>> toggleFolderPin(String id) async {
+    await _cache.toggleFolderPin(id);
+    return List<String>.from(_cache.cache.pinnedFolderIds);
+  }
+
+  @override
+  Future<void> updateCurrentRelativeDir(String relativeDir) {
+    return _cache.updateCurrentRelativeDir(relativeDir);
   }
 }
 
@@ -125,9 +250,16 @@ class MemoWorkspaceController extends ChangeNotifier {
   /// 搜索无标题文档时的展示文案；由 Screen 按当前语言写入。
   String untitledLabel = 'Untitled';
 
+  /// 全库笔记索引（搜索 / 文档链接）。
   List<Memo> memos = [];
+
+  /// 当前目录一层（侧栏普通列表）。
+  List<MemoDirEntry> dirEntries = [];
+
   List<MemoSearchResult> searchResults = [];
   List<String> pinnedMemoIds = [];
+  List<String> pinnedFolderIds = [];
+  String currentRelativeDir = '';
   String? activeMemoId;
   String savedTitle = '';
   String savedContent = '';
@@ -142,6 +274,8 @@ class MemoWorkspaceController extends ChangeNotifier {
   bool get isDirty =>
       titleController.text != savedTitle ||
       contentController.text != savedContent;
+
+  bool get isAtDocumentsRoot => currentRelativeDir.isEmpty;
 
   String? get lastOpenedMemoId => _pins.lastOpenedMemoId;
 
@@ -163,24 +297,160 @@ class MemoWorkspaceController extends ChangeNotifier {
   Future<void> loadPinsAndList() async {
     try {
       await _pins.load();
-      pinnedMemoIds = List<String>.from(_pins.pinnedIds);
     } catch (_) {
-      pinnedMemoIds = [];
+      // 读失败时仍以 store 当前内存为准，禁止假定「无置顶」。
     }
-    final listed = await _store.listMemos();
-    MemoStorageService.sortMemosWithPins(listed, pinnedMemoIds);
-    memos = listed;
+    pinnedMemoIds = List<String>.from(_pins.pinnedIds);
+    pinnedFolderIds = List<String>.from(_pins.pinnedFolderIds);
+    memos = await _store.listMemos();
+    await _restoreCurrentDirectoryAfterLoad();
+    await _reloadDirEntries();
     notifyListeners();
   }
 
+  Future<void> _restoreCurrentDirectoryAfterLoad() async {
+    final lastId = _pins.lastOpenedMemoId;
+    Memo? lastMemo;
+    if (lastId != null) {
+      for (final memo in memos) {
+        if (memo.id == lastId) {
+          lastMemo = memo;
+          break;
+        }
+      }
+    }
+    if (lastMemo != null) {
+      currentRelativeDir = await _store.relativeParentOfPath(lastMemo.filePath);
+      await _pins.updateCurrentRelativeDir(currentRelativeDir);
+      return;
+    }
+    final persisted = _pins.currentRelativeDir;
+    if (await _store.isValidRelativeDir(persisted)) {
+      currentRelativeDir = persisted;
+    } else {
+      currentRelativeDir = '';
+    }
+  }
+
   Future<void> refreshList({String? selectId}) async {
-    final listed = await _store.listMemos();
-    MemoStorageService.sortMemosWithPins(listed, pinnedMemoIds);
-    memos = listed;
+    memos = await _store.listMemos();
     if (selectId != null) {
       activeMemoId = selectId;
     }
+    await _reloadDirEntries();
     notifyListeners();
+  }
+
+  Future<void> _reloadDirEntries() async {
+    final listed = await _store.listDirEntries(currentRelativeDir);
+    dirEntries = MemoStorageService.sortDirEntries(
+      entries: listed,
+      pinnedFolderIds: pinnedFolderIds,
+      pinnedMemoIds: pinnedMemoIds,
+    );
+  }
+
+  Future<void> enterFolder(String folderId) async {
+    MemoFolder? folder;
+    for (final entry in dirEntries) {
+      if (entry.isFolder && entry.id == folderId) {
+        folder = entry.folder;
+        break;
+      }
+    }
+    if (folder == null) {
+      return;
+    }
+    currentRelativeDir = await _store.relativeDirOfFolder(folder.directoryPath);
+    await _pins.updateCurrentRelativeDir(currentRelativeDir);
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  Future<void> goToParentDirectory() async {
+    if (currentRelativeDir.isEmpty) {
+      return;
+    }
+    currentRelativeDir = MemoFs.parentRelativeDir(currentRelativeDir);
+    await _pins.updateCurrentRelativeDir(currentRelativeDir);
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  Future<MemoFolder> createFolder(String displayName) async {
+    final folder = await _store.createFolder(
+      relativeParent: currentRelativeDir,
+      displayName: displayName,
+    );
+    await _reloadDirEntries();
+    notifyListeners();
+    return folder;
+  }
+
+  Future<void> renameFolder({
+    required String id,
+    required String newDisplayName,
+  }) async {
+    await _store.renameFolder(id: id, newDisplayName: newDisplayName);
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  /// 写入或清除文件夹颜色；不改当前目录与活动篇。
+  Future<void> updateFolderColor({
+    required String id,
+    String? colorHex,
+  }) async {
+    await _store.updateFolderColor(id: id, colorHex: colorHex);
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  Future<MemoFolderTreeNode> listFolderTree() => _store.listFolderTree();
+
+  /// 移动笔记到目标相对目录；不改当前目录与活动篇，不重写编辑器。
+  Future<void> moveMemo({
+    required String id,
+    required String destRelativeDir,
+  }) async {
+    await flushSave();
+    await _store.moveMemo(id: id, destRelativeDir: destRelativeDir);
+    memos = await _store.listMemos();
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  /// 移动文件夹到目标相对目录；不改当前目录与活动篇。
+  Future<void> moveFolder({
+    required String id,
+    required String destRelativeDir,
+  }) async {
+    await flushSave();
+    await _store.moveFolder(id: id, destRelativeDir: destRelativeDir);
+    memos = await _store.listMemos();
+    await _reloadDirEntries();
+    notifyListeners();
+  }
+
+  /// 删除文件夹；[wasActive] 表示当前打开篇在该树内。
+  Future<({bool wasActive, List<Memo> remaining})> deleteFolder(String id) async {
+    final activeId = activeMemoId;
+    final containedActive = activeId != null &&
+        await _store.folderContainsMemo(id, activeId);
+    await _store.deleteFolder(id);
+    if (pinnedFolderIds.contains(id)) {
+      pinnedFolderIds = await _pins.toggleFolderPin(id);
+    }
+    memos = await _store.listMemos();
+    if (containedActive) {
+      activeMemoId = null;
+    }
+    await _reloadDirEntries();
+    notifyListeners();
+    if (isSearchActive) {
+      runSearch();
+    }
+    return (wasActive: containedActive, remaining: List<Memo>.from(memos));
   }
 
   void onSearchChanged() {
@@ -272,6 +542,13 @@ class MemoWorkspaceController extends ChangeNotifier {
       memos = memos
           .map((memo) => memo.id == updated.id ? updated : memo)
           .toList();
+      dirEntries = [
+        for (final entry in dirEntries)
+          if (!entry.isFolder && entry.id == updated.id)
+            MemoDirEntry.file(updated)
+          else
+            entry,
+      ];
       notifyListeners();
       if (isSearchActive) {
         runSearch();
@@ -314,8 +591,13 @@ class MemoWorkspaceController extends ChangeNotifier {
     await flushSave();
     final memo = await _store.loadMemo(id);
     applyMemoToEditors(memo);
+    currentRelativeDir = await _store.relativeParentOfPath(memo.filePath);
+    await _pins.updateCurrentRelativeDir(currentRelativeDir);
     if (refreshList) {
       await this.refreshList(selectId: id);
+    } else {
+      await _reloadDirEntries();
+      notifyListeners();
     }
     return memo;
   }
@@ -323,12 +605,15 @@ class MemoWorkspaceController extends ChangeNotifier {
   /// 新建文档：先 flush，再创建并写入编辑器。不含滚动跳转。
   Future<Memo> createNewMemo({bool refreshList = true}) async {
     await flushSave();
-    final memo = await _store.createMemo();
+    final memo = await _store.createMemo(relativeParent: currentRelativeDir);
     applyMemoToEditors(memo);
     if (refreshList) {
       await this.refreshList(selectId: memo.id);
-    } else if (!memos.any((item) => item.id == memo.id)) {
-      memos = [memo, ...memos];
+    } else {
+      if (!memos.any((item) => item.id == memo.id)) {
+        memos = [memo, ...memos];
+      }
+      await _reloadDirEntries();
       notifyListeners();
     }
     return memo;
@@ -379,22 +664,35 @@ class MemoWorkspaceController extends ChangeNotifier {
     if (pinnedMemoIds.contains(id)) {
       pinnedMemoIds = await _pins.togglePin(id);
     }
-    final remaining = memos.where((item) => item.id != id).toList();
-    MemoStorageService.sortMemosWithPins(remaining, pinnedMemoIds);
-    memos = remaining;
+    memos = memos.where((item) => item.id != id).toList();
     if (wasActive) {
       activeMemoId = null;
     }
+    await _reloadDirEntries();
     notifyListeners();
     if (isSearchActive) {
       runSearch();
     }
-    return (wasActive: wasActive, remaining: remaining);
+    return (wasActive: wasActive, remaining: List<Memo>.from(memos));
   }
 
   Future<void> togglePin(String id) async {
     pinnedMemoIds = await _pins.togglePin(id);
-    MemoStorageService.sortMemosWithPins(memos, pinnedMemoIds);
+    dirEntries = MemoStorageService.sortDirEntries(
+      entries: dirEntries,
+      pinnedFolderIds: pinnedFolderIds,
+      pinnedMemoIds: pinnedMemoIds,
+    );
+    notifyListeners();
+  }
+
+  Future<void> toggleFolderPin(String id) async {
+    pinnedFolderIds = await _pins.toggleFolderPin(id);
+    dirEntries = MemoStorageService.sortDirEntries(
+      entries: dirEntries,
+      pinnedFolderIds: pinnedFolderIds,
+      pinnedMemoIds: pinnedMemoIds,
+    );
     notifyListeners();
   }
 
@@ -419,10 +717,11 @@ class MemoWorkspaceController extends ChangeNotifier {
   Future<DataBackupResult> importFromDirectory({
     required UserPreferencesService prefsService,
     required String selectedPath,
+    DataBackupImportMode mode = DataBackupImportMode.merge,
   }) async {
     await flushSave();
     final result = await DataBackupService(prefsService: prefsService)
-        .importFromDirectory(selectedPath);
+        .importFromDirectory(selectedPath, mode: mode);
     resetAfterImport();
     return result;
   }
@@ -430,6 +729,8 @@ class MemoWorkspaceController extends ChangeNotifier {
   void resetAfterImport() {
     activeMemoId = null;
     memos = [];
+    dirEntries = [];
+    currentRelativeDir = '';
     isSearchActive = false;
     searchResults = [];
     searchController.clear();

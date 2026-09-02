@@ -3,17 +3,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import 'app_storage_service.dart';
-
-/// 笔记本地图片：复制到 `{memoId}_assets/`，Markdown 使用相对路径便于整目录迁移。
+/// 笔记本地图片：复制到与 `.md` 同级的 `{memoId}_assets/`，Markdown 使用相对路径。
 class MemoImageService {
-  AppStorageService get _storage => appStorageService;
-
   static String assetsDirName(String memoId) => '${memoId}_assets';
 
-  Future<Directory> assetsDirectory(String memoId) async {
-    final memosDir = await _storage.storageDirectory();
-    final dir = Directory(p.join(memosDir.path, assetsDirName(memoId)));
+  Directory assetsDirectoryFor({
+    required String memoId,
+    required String memoFilePath,
+  }) {
+    return Directory(
+      p.join(p.dirname(memoFilePath), assetsDirName(memoId)),
+    );
+  }
+
+  Future<Directory> assetsDirectory({
+    required String memoId,
+    required String memoFilePath,
+  }) async {
+    final dir = assetsDirectoryFor(memoId: memoId, memoFilePath: memoFilePath);
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
@@ -23,6 +30,7 @@ class MemoImageService {
   /// 将 [sourcePath] 复制到笔记资源目录，返回可插入正文的 Markdown 片段。
   Future<String> copyAndBuildMarkdown({
     required String memoId,
+    required String memoFilePath,
     required String sourcePath,
   }) async {
     final source = File(sourcePath);
@@ -30,7 +38,10 @@ class MemoImageService {
       throw FileSystemException('图片不存在', sourcePath);
     }
 
-    final assetsDir = await assetsDirectory(memoId);
+    final assetsDir = await assetsDirectory(
+      memoId: memoId,
+      memoFilePath: memoFilePath,
+    );
     final fileName = _uniqueFileName(assetsDir, p.basename(sourcePath));
     final dest = File(p.join(assetsDir.path, fileName));
     await source.copy(dest.path);
@@ -60,9 +71,11 @@ class MemoImageService {
     return file.existsSync() ? file : null;
   }
 
-  Future<void> deleteAssets(String memoId) async {
-    final memosDir = await _storage.storageDirectory();
-    final dir = Directory(p.join(memosDir.path, assetsDirName(memoId)));
+  Future<void> deleteAssets({
+    required String memoId,
+    required String memoFilePath,
+  }) async {
+    final dir = assetsDirectoryFor(memoId: memoId, memoFilePath: memoFilePath);
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }

@@ -10,20 +10,14 @@ void main() {
 
   group('prepareLiveBlocksFromMarkdown', () {
     test('空文档得到单段落并激活', () {
-      final prepared = prepareLiveBlocksFromMarkdown(
-        '',
-        idGenerator: ids,
-      );
+      final prepared = prepareLiveBlocksFromMarkdown('', idGenerator: ids);
       expect(prepared.blocks, hasLength(1));
       expect(prepared.blocks.first, isA<ParagraphBlock>());
       expect(prepared.activeBlockId, prepared.blocks.first.id);
     });
 
     test('isEmptyDocumentBody 仅单空段落', () {
-      expect(
-        isEmptyDocumentBody([ParagraphBlock(id: 'p', text: '')]),
-        isTrue,
-      );
+      expect(isEmptyDocumentBody([ParagraphBlock(id: 'p', text: '')]), isTrue);
       expect(
         isEmptyDocumentBody([ParagraphBlock(id: 'p', text: '  ')]),
         isTrue,
@@ -39,10 +33,7 @@ void main() {
         ]),
         isFalse,
       );
-      expect(
-        isEmptyDocumentBody([BulletBlock(id: 'b', text: '')]),
-        isFalse,
-      );
+      expect(isEmptyDocumentBody([BulletBlock(id: 'b', text: '')]), isFalse);
     });
 
     test('rendererParagraphMatchesCaretPlain 识别 stale 正文', () {
@@ -117,9 +108,7 @@ void main() {
 
   group('splitMultilineBlockAt', () {
     test('在 plain 光标处拆成两段并标记 continuesWithNext', () {
-      final blocks = [
-        ParagraphBlock(id: 'p1', text: 'hello world'),
-      ];
+      final blocks = [ParagraphBlock(id: 'p1', text: 'hello world')];
       final result = splitMultilineBlockAt(
         blocks: blocks,
         index: 0,
@@ -136,9 +125,7 @@ void main() {
     });
 
     test('含行内格式时按 plain 光标拆分 markdown', () {
-      final blocks = [
-        ParagraphBlock(id: 'p1', text: '**ab**cd'),
-      ];
+      final blocks = [ParagraphBlock(id: 'p1', text: '**ab**cd')];
       // plain = "abcd"；光标在 2 → 拆成 **ab** | cd
       final result = splitMultilineBlockAt(
         blocks: blocks,
@@ -154,9 +141,7 @@ void main() {
 
   group('insertBlockBelowSingleLine', () {
     test('标题 Enter 后半段变为段落', () {
-      final blocks = [
-        HeadingBlock(id: 'h1', level: 1, text: 'TitleMore'),
-      ];
+      final blocks = [HeadingBlock(id: 'h1', level: 1, text: 'TitleMore')];
       final result = insertBlockBelowSingleLine(
         blocks: blocks,
         index: 0,
@@ -173,9 +158,7 @@ void main() {
     });
 
     test('无序列表 Enter 保留类型并拆分', () {
-      final blocks = [
-        BulletBlock(id: 'b1', text: 'one two'),
-      ];
+      final blocks = [BulletBlock(id: 'b1', text: 'one two')];
       final result = insertBlockBelowSingleLine(
         blocks: blocks,
         index: 0,
@@ -240,10 +223,7 @@ void main() {
 
     test('resolvedInlineMarkdownForEdit 保持未改动的行内语法', () {
       final block = ParagraphBlock(id: 'p', text: '**hi**');
-      expect(
-        resolvedInlineMarkdownForEdit(block, 'hi'),
-        '**hi**',
-      );
+      expect(resolvedInlineMarkdownForEdit(block, 'hi'), '**hi**');
     });
   });
 
@@ -261,6 +241,51 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('syncParagraphFlowFlags', () {
+    test('正文后改成列表时清掉前一块 continuesWithNext', () {
+      final blocks = <MdBlock>[
+        const ParagraphBlock(id: 'a', text: 'body', continuesWithNext: true),
+        BulletBlock(id: 'b', text: 'item'),
+      ];
+      syncParagraphFlowFlags(blocks);
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isFalse);
+    });
+
+    test('下一块仍是段落时保留 continuesWithNext', () {
+      final blocks = <MdBlock>[
+        const ParagraphBlock(id: 'a', text: 'line1', continuesWithNext: true),
+        const ParagraphBlock(id: 'b', text: 'line2'),
+      ];
+      syncParagraphFlowFlags(blocks);
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isTrue);
+    });
+
+    test('插入分割线后清掉被隔开的段落 flow', () {
+      final replaced = insertThematicBreakAt(
+        blocks: const [
+          ParagraphBlock(id: 'a', text: 'above', continuesWithNext: true),
+          ParagraphBlock(id: 'b', text: ''),
+        ],
+        index: 1,
+        idGenerator: ids,
+      );
+      expect(replaced.blocks[0], isA<ParagraphBlock>());
+      expect((replaced.blocks[0] as ParagraphBlock).continuesWithNext, isFalse);
+      expect(replaced.blocks[1], isA<ThematicBreakBlock>());
+
+      final inserted = insertThematicBreakAt(
+        blocks: const [
+          ParagraphBlock(id: 'a', text: 'above', continuesWithNext: true),
+          ParagraphBlock(id: 'b', text: 'below'),
+        ],
+        index: 0,
+        idGenerator: ids,
+      );
+      expect((inserted.blocks[0] as ParagraphBlock).continuesWithNext, isFalse);
+      expect(inserted.blocks[1], isA<ThematicBreakBlock>());
     });
   });
 
@@ -306,6 +331,95 @@ void main() {
       expect(result.blocks[1], isA<ThematicBreakBlock>());
       expect(result.blocks[2], isA<ParagraphBlock>());
       expect(result.newActiveId, result.blocks[2].id);
+    });
+  });
+
+  group('mergeCurrentBlockIntoPrevious', () {
+    test('空段落下的标题并入正文并删除当前块', () {
+      final empty = ParagraphBlock(id: ids.next(), text: '');
+      final heading = HeadingBlock(id: ids.next(), level: 1, text: '标题');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [empty, heading],
+        currentIndex: 1,
+        currentPlain: '标题',
+      );
+      expect(result.handled, isTrue);
+      expect(result.blocks, hasLength(1));
+      expect(result.blocks.single, isA<ParagraphBlock>());
+      expect((result.blocks.single as ParagraphBlock).text, '标题');
+      expect(result.activeId, empty.id);
+      expect(result.caretOffset, 0);
+    });
+
+    test('空标题接下一段落时保持标题格式', () {
+      final heading = HeadingBlock(id: ids.next(), level: 2, text: '');
+      final para = ParagraphBlock(id: ids.next(), text: '正文');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [heading, para],
+        currentIndex: 1,
+        currentPlain: '正文',
+      );
+      expect(result.handled, isTrue);
+      expect(result.blocks, hasLength(1));
+      expect(result.blocks.single, isA<HeadingBlock>());
+      expect((result.blocks.single as HeadingBlock).text, '正文');
+      expect((result.blocks.single as HeadingBlock).level, 2);
+    });
+
+    test('上一块为原子块时删除无效', () {
+      final hr = ThematicBreakBlock(id: ids.next());
+      final heading = HeadingBlock(id: ids.next(), level: 1, text: '标题');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [hr, heading],
+        currentIndex: 1,
+        currentPlain: '标题',
+      );
+      expect(result.handled, isFalse);
+      expect(result.blocks, hasLength(2));
+      expect(result.blocks[1], isA<HeadingBlock>());
+      expect((result.blocks[1] as HeadingBlock).text, '标题');
+    });
+
+    test('当前块文本接到上一文本块末尾', () {
+      final prev = ParagraphBlock(id: ids.next(), text: 'hello');
+      final current = HeadingBlock(id: ids.next(), level: 1, text: 'World');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [prev, current],
+        currentIndex: 1,
+        currentPlain: 'World',
+      );
+      expect(result.handled, isTrue);
+      expect(result.blocks, hasLength(1));
+      expect((result.blocks.single as ParagraphBlock).text, 'helloWorld');
+      expect(result.caretOffset, 'hello'.length);
+    });
+
+    test('文档首块不合并', () {
+      final heading = HeadingBlock(id: ids.next(), level: 1, text: '标题');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [heading],
+        currentIndex: 0,
+        currentPlain: '标题',
+      );
+      expect(result.handled, isFalse);
+      expect(result.blocks, hasLength(1));
+    });
+
+    test('有序列表中间项合并后重编号', () {
+      final first = OrderedBlock(id: ids.next(), marker: '1.', text: 'a');
+      final second = OrderedBlock(id: ids.next(), marker: '2.', text: 'b');
+      final third = OrderedBlock(id: ids.next(), marker: '3.', text: 'c');
+      final result = mergeCurrentBlockIntoPrevious(
+        blocks: [first, second, third],
+        currentIndex: 1,
+        currentPlain: 'b',
+      );
+      expect(result.handled, isTrue);
+      expect(result.blocks, hasLength(2));
+      expect((result.blocks[0] as OrderedBlock).text, 'ab');
+      expect((result.blocks[0] as OrderedBlock).marker, '1.');
+      expect((result.blocks[1] as OrderedBlock).marker, '2.');
+      expect((result.blocks[1] as OrderedBlock).text, 'c');
     });
   });
 }

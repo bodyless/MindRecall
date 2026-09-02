@@ -22,7 +22,12 @@ class MdBlocksPreview extends StatelessWidget {
     this.onLinkTap,
     this.resolveLinkLabel,
     this.scrollController,
-    this.padding = const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    this.padding = const EdgeInsets.fromLTRB(
+      MdBlockStyles.editorBodyHorizontalPadding,
+      MdBlockStyles.editorBodyTopPadding,
+      MdBlockStyles.editorBodyHorizontalPadding,
+      24,
+    ),
     this.selectable = true,
   });
 
@@ -53,6 +58,7 @@ class MdBlocksPreview extends StatelessWidget {
       itemCount: blocks.length,
       itemBuilder: (context, index) {
         final block = blocks[index];
+        final next = index + 1 < blocks.length ? blocks[index + 1] : null;
         final visual = MdBlockRenderer(
           block: block,
           memoFilePath: memoFilePath,
@@ -61,7 +67,9 @@ class MdBlocksPreview extends StatelessWidget {
           resolveLinkLabel: resolveLinkLabel,
         );
         return Padding(
-          padding: EdgeInsets.only(bottom: MdBlockStyles.bottomSpacingFor(block)),
+          padding: EdgeInsets.only(
+            bottom: MdBlockStyles.bottomSpacingFor(block, next: next),
+          ),
           child: selectable
               ? _MdBlockDataSelectable(block: block, visual: visual)
               : visual,
@@ -78,10 +86,7 @@ class MdBlocksPreview extends StatelessWidget {
 
 /// 拦截复制：把选区中的渲染字形（如 `•`）转成 Markdown 数据。
 class _PreviewSelectionHost extends StatefulWidget {
-  const _PreviewSelectionHost({
-    required this.markdown,
-    required this.child,
-  });
+  const _PreviewSelectionHost({required this.markdown, required this.child});
 
   final String markdown;
   final Widget child;
@@ -124,8 +129,9 @@ class _PreviewSelectionHostState extends State<_PreviewSelectionHost> {
             _selectedPlain = selected?.plainText;
           },
           contextMenuBuilder: (context, selectableRegionState) {
-            final items =
-                selectableRegionState.contextMenuButtonItems.map((item) {
+            final items = selectableRegionState.contextMenuButtonItems.map((
+              item,
+            ) {
               if (item.type == ContextMenuButtonType.copy) {
                 return ContextMenuButtonItem(
                   type: ContextMenuButtonType.copy,
@@ -151,10 +157,7 @@ class _PreviewSelectionHostState extends State<_PreviewSelectionHost> {
 
 /// 预览块：选区几何与渲染层一致；复制时再转 Markdown。
 class _MdBlockDataSelectable extends StatelessWidget {
-  const _MdBlockDataSelectable({
-    required this.block,
-    required this.visual,
-  });
+  const _MdBlockDataSelectable({required this.block, required this.visual});
 
   final MdBlock block;
   final Widget visual;
@@ -197,67 +200,63 @@ Widget _selectionMirrorForBlock(ThemeData theme, MdBlock block) {
 
   return switch (block) {
     HeadingBlock(:final level, :final text) => Text(
-        plainOf(text),
-        style: transparent(MdBlockStyles.headingStyle(theme, level)),
-        strutStyle: MdBlockStyles.strutFor(
-          MdBlockStyles.headingStyle(theme, level),
-        ),
+      plainOf(text),
+      style: transparent(MdBlockStyles.headingStyle(theme, level)),
+      strutStyle: MdBlockStyles.strutFor(
+        MdBlockStyles.headingStyle(theme, level),
       ),
+    ),
     BulletBlock(:final text) || OrderedBlock(:final text) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          MdBlockChrome.buildPrefix(
-            block,
-            transparent(theme.textTheme.bodyLarge),
-            visible: true,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MdBlockChrome.buildPrefix(
+          block,
+          transparent(theme.textTheme.bodyLarge),
+          visible: true,
+        ),
+        Expanded(
+          child: Text(
+            plainOf(text),
+            style: transparent(theme.textTheme.bodyLarge),
+            strutStyle: MdBlockStyles.strutFor(theme.textTheme.bodyLarge),
           ),
-          Expanded(
-            child: Text(
-              plainOf(text),
-              style: transparent(theme.textTheme.bodyLarge),
-              strutStyle: MdBlockStyles.strutFor(theme.textTheme.bodyLarge),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
+    ),
     QuoteBlock(:final text) => Padding(
-        padding: MdBlockChrome.quoteBodyPadding(),
-        child: Text(
-          plainOf(text),
-          style: transparent(MdBlockStyles.quoteTextStyle(theme)),
-          strutStyle: MdBlockStyles.strutFor(MdBlockStyles.quoteTextStyle(theme)),
-        ),
-      ),
-    CodeBlock(:final code) => Padding(
-        padding: MdBlockChrome.codeBlockPadding(),
-        child: Text(
-          code,
-          style: transparent(
-            theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
-          ),
-        ),
-      ),
-    ImageBlock(:final alt, :final src) => Text(
-        alt.isEmpty ? src : alt,
-        style: transparent(theme.textTheme.bodyLarge),
-      ),
-    ThematicBreakBlock() => SizedBox(
-        height: MdBlockStyles.thematicBreakHeight,
-        width: double.infinity,
-        child: const Text(
-          '---',
-          style: TextStyle(
-            color: Colors.transparent,
-            fontSize: 0.01,
-            height: 1,
-          ),
-        ),
-      ),
-    ParagraphBlock(:final text) => Text(
+      padding: MdBlockChrome.quoteBodyPadding(),
+      child: Text(
         plainOf(text),
-        style: transparent(theme.textTheme.bodyLarge),
-        strutStyle: MdBlockStyles.strutFor(theme.textTheme.bodyLarge),
+        style: transparent(MdBlockStyles.quoteTextStyle(theme)),
+        strutStyle: MdBlockStyles.strutFor(MdBlockStyles.quoteTextStyle(theme)),
       ),
+    ),
+    CodeBlock(:final code) => Padding(
+      padding: MdBlockChrome.codeBlockPadding(),
+      child: Text(
+        code,
+        style: transparent(
+          theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+        ),
+      ),
+    ),
+    ImageBlock(:final alt, :final src) => Text(
+      alt.isEmpty ? src : alt,
+      style: transparent(theme.textTheme.bodyLarge),
+    ),
+    ThematicBreakBlock() => SizedBox(
+      height: MdBlockStyles.thematicBreakHeight,
+      width: double.infinity,
+      child: const Text(
+        '---',
+        style: TextStyle(color: Colors.transparent, fontSize: 0.01, height: 1),
+      ),
+    ),
+    ParagraphBlock(:final text) => Text(
+      plainOf(text),
+      style: transparent(theme.textTheme.bodyLarge),
+      strutStyle: MdBlockStyles.strutFor(theme.textTheme.bodyLarge),
+    ),
   };
 }
 
@@ -267,22 +266,25 @@ String visualSelectionToMarkdown(String selected) {
   const bullet = MdBlockChrome.bulletPrefix;
   const taskUnchecked = MdBlockChrome.taskUncheckedPrefix;
   const taskChecked = MdBlockChrome.taskCheckedPrefix;
-  return selected.split('\n').map((line) {
-    if (line.startsWith(taskChecked)) {
-      return '- [x] ${line.substring(taskChecked.length)}';
-    }
-    if (line.startsWith(taskUnchecked)) {
-      return '- [ ] ${line.substring(taskUnchecked.length)}';
-    }
-    if (line.startsWith(bullet)) {
-      return '- ${line.substring(bullet.length)}';
-    }
-    if (line.startsWith('• ')) {
-      return '- ${line.substring(2)}';
-    }
-    if (line.startsWith('•')) {
-      return '- ${line.substring(1).trimLeft()}';
-    }
-    return line;
-  }).join('\n');
+  return selected
+      .split('\n')
+      .map((line) {
+        if (line.startsWith(taskChecked)) {
+          return '- [x] ${line.substring(taskChecked.length)}';
+        }
+        if (line.startsWith(taskUnchecked)) {
+          return '- [ ] ${line.substring(taskUnchecked.length)}';
+        }
+        if (line.startsWith(bullet)) {
+          return '- ${line.substring(bullet.length)}';
+        }
+        if (line.startsWith('• ')) {
+          return '- ${line.substring(2)}';
+        }
+        if (line.startsWith('•')) {
+          return '- ${line.substring(1).trimLeft()}';
+        }
+        return line;
+      })
+      .join('\n');
 }

@@ -138,6 +138,24 @@ void main() {
       expect(triggered!.id, 'b1');
     });
 
+    test('copyBlockInlineMarkdown 写回标题与代码块', () {
+      final heading = copyBlockInlineMarkdown(
+        const HeadingBlock(id: 'h', level: 2, text: 'old'),
+        'new',
+      );
+      expect(heading, isA<HeadingBlock>());
+      expect((heading as HeadingBlock).text, 'new');
+      expect(heading.level, 2);
+
+      final code = copyBlockInlineMarkdown(
+        const CodeBlock(id: 'c', code: 'old', language: 'dart'),
+        'print(1);',
+      );
+      expect(code, isA<CodeBlock>());
+      expect((code as CodeBlock).code, 'print(1);');
+      expect(code.language, 'dart');
+    });
+
     test('supportsPlainEditing is false only for atomic blocks', () {
       expect(const ParagraphBlock(id: 'p', text: '').supportsPlainEditing, isTrue);
       expect(

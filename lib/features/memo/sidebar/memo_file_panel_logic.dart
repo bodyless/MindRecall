@@ -1,5 +1,9 @@
 /// 侧栏 / 抽屉文件面板的纯逻辑（便于单测，无 Flutter 依赖）。
 
+import 'package:mind_recall/models/memo_folder.dart';
+import 'package:mind_recall/services/memo_fs_constants.dart';
+import 'package:mind_recall/services/memo_storage_service.dart';
+
 /// 窄屏抽屉边缘拖动手势起始区占屏宽比例（左半屏即可呼出）。
 const double kDrawerEdgeDragWidthFraction = 0.5;
 
@@ -12,6 +16,121 @@ bool memoFilePanelShowsSearchResults({
   required String query,
 }) {
   return isSearchActive && query.trim().isNotEmpty;
+}
+
+/// 非搜索态且不在 `documents/` 根时显示「返回上级」。
+bool memoFilePanelShowsParentButton({
+  required bool isSearchActive,
+  required String query,
+  required String currentRelativeDir,
+}) {
+  if (memoFilePanelShowsSearchResults(
+    isSearchActive: isSearchActive,
+    query: query,
+  )) {
+    return false;
+  }
+  return currentRelativeDir.isNotEmpty;
+}
+
+/// 仅当前层中的活动笔记高亮；文件夹不高亮。
+bool memoListItemIsHighlighted({
+  required bool isFolder,
+  required String entryId,
+  required String? activeMemoId,
+}) {
+  if (isFolder) {
+    return false;
+  }
+  return activeMemoId != null && entryId == activeMemoId;
+}
+
+/// 当前层四段排序（置顶文件夹 / 置顶文件 / 文件夹 / 文件）。
+List<MemoDirEntry> sortMemoDirEntries({
+  required List<MemoDirEntry> entries,
+  required List<String> pinnedFolderIds,
+  required List<String> pinnedMemoIds,
+}) {
+  return MemoStorageService.sortDirEntries(
+    entries: entries,
+    pinnedFolderIds: pinnedFolderIds,
+    pinnedMemoIds: pinnedMemoIds,
+  );
+}
+
+/// 侧栏行第二行显示的时间：文件夹用目录 mtime，文件用 [Memo.updatedAt]。
+DateTime memoDirEntryListTime(MemoDirEntry entry) {
+  if (entry.isFolder) {
+    return entry.folder!.updatedAt;
+  }
+  return entry.memo!.updatedAt;
+}
+
+/// 选目录树每一层：置顶文件夹靠前（后置顶靠前），其余按 [MemoFolderTreeNode.createdAt] 新→旧。
+MemoFolderTreeNode sortMemoFolderTree(
+  MemoFolderTreeNode root, {
+  required List<String> pinnedFolderIds,
+}) {
+  List<MemoFolderTreeNode> sortChildren(List<MemoFolderTreeNode> nodes) {
+    final pinned = <MemoFolderTreeNode>[];
+    final rest = <MemoFolderTreeNode>[];
+    for (final node in nodes) {
+      final id = node.folderId;
+      if (id != null && pinnedFolderIds.contains(id)) {
+        pinned.add(node);
+      } else {
+        rest.add(node);
+      }
+    }
+    pinned.sort(
+      (a, b) => pinnedFolderIds
+          .indexOf(a.folderId!)
+          .compareTo(pinnedFolderIds.indexOf(b.folderId!)),
+    );
+    rest.sort((a, b) {
+      final aTime = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final byTime = bTime.compareTo(aTime);
+      if (byTime != 0) {
+        return byTime;
+      }
+      return (b.folderId ?? '').compareTo(a.folderId ?? '');
+    });
+    return [
+      for (final node in [...pinned, ...rest])
+        node.copyWith(children: sortChildren(node.children)),
+    ];
+  }
+
+  return root.copyWith(children: sortChildren(root.children));
+}
+
+/// 移动文件夹时从树中去掉自身及子孙；根节点始终保留。
+MemoFolderTreeNode excludeFolderFromMoveTree(
+  MemoFolderTreeNode root, {
+  required String movingFolderRelativeDir,
+}) {
+  List<MemoFolderTreeNode> filter(List<MemoFolderTreeNode> nodes) {
+    return [
+      for (final node in nodes)
+        if (!MemoFs.isSelfOrDescendantRelative(
+          candidate: node.relativeDir,
+          ancestor: movingFolderRelativeDir,
+        ))
+          node.copyWith(children: filter(node.children)),
+    ];
+  }
+
+  return root.copyWith(children: filter(root.children));
+}
+
+/// 所选目标与源父目录不同时才允许确认。
+bool moveDestinationConfirmEnabled({
+  required String sourceParentRelativeDir,
+  required String selectedRelativeDir,
+}) {
+  return sourceParentRelativeDir.replaceAll(r'\', '/') !=
+      selectedRelativeDir.replaceAll(r'\', '/');
 }
 
 /// 窄屏抽屉边缘拖动手势起始区宽度。

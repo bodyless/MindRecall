@@ -1,12 +1,4 @@
-## 目标
-
-将已修复 Bug 清单从仓库根目录迁到 `agents/fixed_list.md`，并同步所有说明与引用。
-
-## 整体方案
-
-移动清单文件，再把规则、README、skills 里的路径一律改为 `agents/fixed_list.md`。
-
-## 任务
+## 步骤 1：迁固定清单
 
 - [x] 将仓库根目录 `fixed_list.md` 移动到 `agents/fixed_list.md`（若 `agents/` 不存在则先新建该目录），正文内容保持不变；
 - [x] 在 `.cursor/rules/fixed-bugs.mdc` 的「## 文件」段，将「仓库根目录：`fixed_list.md`」改为「`agents/fixed_list.md`」；

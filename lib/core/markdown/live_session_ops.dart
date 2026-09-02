@@ -24,9 +24,9 @@ import 'parser/markdown_block_parser.dart';
   final activeBlockId = preferLastBlock
       ? blocks.last.id
       : (preferredActiveId != null &&
-              blocks.any((block) => block.id == preferredActiveId)
-          ? preferredActiveId!
-          : blocks.first.id);
+                blocks.any((block) => block.id == preferredActiveId)
+            ? preferredActiveId!
+            : blocks.first.id);
   return (blocks: blocks, activeBlockId: activeBlockId);
 }
 
@@ -67,10 +67,7 @@ MdBlock paragraphAfterSplit(MdBlock block, String markdown) {
   final next = List<MdBlock>.of(blocks);
   final split = splitInlineMarkdown(resolvedMarkdownBeforeEdit, plainCursor);
   next[index] = paragraphAfterSplit(next[index], split.before);
-  final newBlock = ParagraphBlock(
-    id: idGenerator.next(),
-    text: split.after,
-  );
+  final newBlock = ParagraphBlock(id: idGenerator.next(), text: split.after);
   next.insert(index + 1, newBlock);
   return (blocks: next, newActiveId: newBlock.id);
 }
@@ -119,8 +116,9 @@ MdBlock paragraphAfterSplit(MdBlock block, String markdown) {
 
 /// 用 plain 写回活动块（提交/失焦时）。
 MdBlock commitPlainToBlock(MdBlock block, String plainText) {
-  final normalized =
-      supportsInlineFormatting(block) ? plainText : plainText.split('\n').first;
+  final normalized = supportsInlineFormatting(block)
+      ? plainText
+      : plainText.split('\n').first;
   final updatedMarkdown = resolvedInlineMarkdownForEdit(block, normalized);
   if (updatedMarkdown == inlineMarkdownForBlock(block)) {
     return block;
@@ -171,6 +169,24 @@ MdBlock copyWithContinuesWithNext(
   return block;
 }
 
+/// 清掉已过期的 [ParagraphBlock.continuesWithNext]。
+///
+/// 正文 Enter 后下一块改成列表/标题/分割线时，前一块若仍带着 flow 标记，
+/// 块间距会当成段内换行。切模式重解析才会恢复。就地改 [blocks]。
+void syncParagraphFlowFlags(List<MdBlock> blocks) {
+  for (var i = 0; i < blocks.length; i++) {
+    final block = blocks[i];
+    if (block is! ParagraphBlock || !block.continuesWithNext) {
+      continue;
+    }
+    final nextIsParagraph =
+        i + 1 < blocks.length && blocks[i + 1] is ParagraphBlock;
+    if (!nextIsParagraph) {
+      blocks[i] = block.copyWith(continuesWithNext: false);
+    }
+  }
+}
+
 /// 原子块下方插入空段落，供继续键入。
 ({List<MdBlock> blocks, String newActiveId}) ensureEditableBlockAfterAtomic({
   required List<MdBlock> blocks,
@@ -184,6 +200,63 @@ MdBlock copyWithContinuesWithNext(
   return (blocks: next, newActiveId: paragraph.id);
 }
 
+/// 块首 Backspace：把当前块全文接到上一文本块末尾，并删除当前块。
+///
+/// 规则：保留上一块的块级格式；上一块为图片/分割线等原子块时 [handled] 为 false
+///（删除无效）。文档首块（[currentIndex] == 0）不处理。
+({List<MdBlock> blocks, String activeId, int caretOffset, bool handled})
+mergeCurrentBlockIntoPrevious({
+  required List<MdBlock> blocks,
+  required int currentIndex,
+  required String currentPlain,
+}) {
+  if (currentIndex <= 0 || currentIndex >= blocks.length) {
+    final fallbackId = blocks.isEmpty
+        ? ''
+        : blocks[currentIndex.clamp(0, blocks.length - 1)].id;
+    return (
+      blocks: List<MdBlock>.of(blocks),
+      activeId: fallbackId,
+      caretOffset: 0,
+      handled: false,
+    );
+  }
+
+  final previous = blocks[currentIndex - 1];
+  final current = blocks[currentIndex];
+  if (!previous.supportsPlainEditing) {
+    return (
+      blocks: List<MdBlock>.of(blocks),
+      activeId: current.id,
+      caretOffset: 0,
+      handled: false,
+    );
+  }
+
+  final next = List<MdBlock>.of(blocks);
+  final caretOffset = editableTextForBlock(previous).length;
+  final appended = supportsInlineFormatting(current)
+      ? resolvedInlineMarkdownForEdit(current, currentPlain)
+      : currentPlain;
+  final mergedMarkdown = supportsInlineFormatting(previous)
+      ? mergeInlineMarkdown(inlineMarkdownForBlock(previous), appended)
+      : editableTextForBlock(previous) + currentPlain;
+
+  final inheritFlow = current is ParagraphBlock && current.continuesWithNext;
+  next[currentIndex - 1] = copyWithContinuesWithNext(
+    copyBlockInlineMarkdown(previous, mergedMarkdown),
+    continuesWithNext: inheritFlow,
+  );
+  next.removeAt(currentIndex);
+  renumberOrderedBlocksAfterRemoval(next, currentIndex);
+  return (
+    blocks: next,
+    activeId: previous.id,
+    caretOffset: caretOffset,
+    handled: true,
+  );
+}
+
 /// 在 [index] 处插入分割线：空段落则替换，否则插在后方；线后再插空段落并聚焦。
 ({List<MdBlock> blocks, String newActiveId}) insertThematicBreakAt({
   required List<MdBlock> blocks,
@@ -193,11 +266,13 @@ MdBlock copyWithContinuesWithNext(
   final next = List<MdBlock>.of(blocks);
   if (next.isEmpty || index < 0 || index >= next.length) {
     next.add(ThematicBreakBlock(id: idGenerator.next()));
-    return ensureEditableBlockAfterAtomic(
+    final continued = ensureEditableBlockAfterAtomic(
       blocks: next,
       atomicIndex: next.length - 1,
       idGenerator: idGenerator,
     );
+    syncParagraphFlowFlags(continued.blocks);
+    return continued;
   }
 
   final current = next[index];
@@ -209,9 +284,11 @@ MdBlock copyWithContinuesWithNext(
     next.insert(index + 1, ThematicBreakBlock(id: idGenerator.next()));
     atomicIndex = index + 1;
   }
-  return ensureEditableBlockAfterAtomic(
+  final continued = ensureEditableBlockAfterAtomic(
     blocks: next,
     atomicIndex: atomicIndex,
     idGenerator: idGenerator,
   );
+  syncParagraphFlowFlags(continued.blocks);
+  return continued;
 }

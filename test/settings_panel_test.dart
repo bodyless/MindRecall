@@ -101,4 +101,23 @@ void main() {
     expect(find.text('显示IME状态'), findsOneWidget);
     expect(find.text('显示光标状态'), findsOneWidget);
   });
+
+  testWidgets('shows app version as 大.小.迭代 without buildNumber',
+      (tester) async {
+    const label = '3.4.5';
+    await tester.pumpWidget(
+      wrap(
+        SettingsPanel(
+          prefsService: UserPreferencesService(),
+          onThemeModeChanged: (_) {},
+          onLocaleChanged: (_) {},
+          onFontSizeChanged: (_) {},
+          appVersionLabel: label,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('版本 $label'), findsOneWidget);
+  });
 }

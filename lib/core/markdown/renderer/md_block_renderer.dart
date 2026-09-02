@@ -46,89 +46,87 @@ class MdBlockRenderer extends StatelessWidget {
 
     return switch (block) {
       HeadingBlock(:final level, :final text) => MdInlineText(
-          markdown: text.isEmpty ? ' ' : text,
-          style: MdBlockStyles.headingStyle(theme, level),
-          onLinkTap: onLinkTap,
-          resolveLinkLabel: resolveLinkLabel,
-        ),
+        markdown: text.isEmpty ? ' ' : text,
+        style: MdBlockStyles.headingStyle(theme, level),
+        onLinkTap: onLinkTap,
+        resolveLinkLabel: resolveLinkLabel,
+      ),
       BulletBlock(:final text) => Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            MdBlockChrome.buildPrefix(
-              block,
-              theme.textTheme.bodyLarge,
-              visible: true,
-              onTaskToggle: onTaskToggle,
-              accentColor: theme.colorScheme.primary,
-            ),
-            Expanded(
-              child: MdInlineText(
-                markdown: text,
-                style: theme.textTheme.bodyLarge,
-                onLinkTap: onLinkTap,
-                resolveLinkLabel: resolveLinkLabel,
-              ),
-            ),
-          ],
-        ),
-      OrderedBlock(:final text) => Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            MdBlockChrome.buildPrefix(
-              block,
-              theme.textTheme.bodyLarge,
-              visible: true,
-            ),
-            Expanded(
-              child: MdInlineText(
-                markdown: text,
-                style: theme.textTheme.bodyLarge,
-                onLinkTap: onLinkTap,
-                resolveLinkLabel: resolveLinkLabel,
-              ),
-            ),
-          ],
-        ),
-      QuoteBlock(:final text) => DecoratedBox(
-          decoration: MdBlockStyles.quoteDecoration(theme),
-          child: Padding(
-            padding: MdBlockChrome.quoteBodyPadding(),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MdBlockChrome.buildPrefix(
+            block,
+            theme.textTheme.bodyLarge,
+            visible: true,
+            onTaskToggle: onTaskToggle,
+            accentColor: theme.colorScheme.primary,
+          ),
+          Expanded(
             child: MdInlineText(
               markdown: text,
-              style: MdBlockStyles.quoteTextStyle(theme),
+              style: theme.textTheme.bodyLarge,
               onLinkTap: onLinkTap,
               resolveLinkLabel: resolveLinkLabel,
             ),
           ),
-        ),
-      CodeBlock(:final code) => Container(
-          width: double.infinity,
-          padding: MdBlockChrome.codeBlockPadding(),
-          decoration: MdBlockStyles.codeBlockDecoration(theme),
-          child: Text(
-            code,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
+        ],
+      ),
+      OrderedBlock(:final text) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MdBlockChrome.buildPrefix(
+            block,
+            theme.textTheme.bodyLarge,
+            visible: true,
+          ),
+          Expanded(
+            child: MdInlineText(
+              markdown: text,
+              style: theme.textTheme.bodyLarge,
+              onLinkTap: onLinkTap,
+              resolveLinkLabel: resolveLinkLabel,
             ),
           ),
+        ],
+      ),
+      QuoteBlock(:final text) => DecoratedBox(
+        decoration: MdBlockStyles.quoteDecoration(theme),
+        child: Padding(
+          padding: MdBlockChrome.quoteBodyPadding(),
+          child: MdInlineText(
+            markdown: text,
+            style: MdBlockStyles.quoteTextStyle(theme),
+            onLinkTap: onLinkTap,
+            resolveLinkLabel: resolveLinkLabel,
+          ),
         ),
+      ),
+      CodeBlock(:final code) => Container(
+        width: double.infinity,
+        padding: MdBlockChrome.codeBlockPadding(),
+        decoration: MdBlockStyles.codeBlockDecoration(theme),
+        child: Text(
+          code,
+          style: theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+        ),
+      ),
       ImageBlock(:final alt, :final src) => _ImageContent(
-          alt: alt,
-          src: src,
-          memoFilePath: memoFilePath,
-          resolveLocalImage: resolveLocalImage,
-        ),
+        alt: alt,
+        src: src,
+        memoFilePath: memoFilePath,
+        resolveLocalImage: resolveLocalImage,
+      ),
       ThematicBreakBlock() => Divider(
-          height: MdBlockStyles.thematicBreakHeight,
-          thickness: MdBlockStyles.thematicBreakThickness,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        height: MdBlockStyles.thematicBreakHeight,
+        thickness: MdBlockStyles.thematicBreakThickness,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
       ParagraphBlock(:final text) => MdInlineText(
-          markdown: text,
-          style: theme.textTheme.bodyLarge,
-          onLinkTap: onLinkTap,
-          resolveLinkLabel: resolveLinkLabel,
-        ),
+        markdown: text,
+        style: theme.textTheme.bodyLarge,
+        onLinkTap: onLinkTap,
+        resolveLinkLabel: resolveLinkLabel,
+      ),
     };
   }
 
@@ -140,32 +138,32 @@ class MdBlockRenderer extends StatelessWidget {
 
     return switch (block) {
       HeadingBlock(:final level) => MdBlockChrome.emptyBodyPlaceholderText(
-          MdBlockStyles.headingStyle(theme, level),
-        ),
+        MdBlockStyles.headingStyle(theme, level),
+      ),
       BulletBlock() || OrderedBlock() => Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            MdBlockChrome.buildPrefix(
-              block,
-              theme.textTheme.bodyLarge,
-              visible: true,
-              onTaskToggle: onTaskToggle,
-              accentColor: theme.colorScheme.primary,
-            ),
-            Expanded(child: bodyPlaceholder),
-          ],
-        ),
-      QuoteBlock() => DecoratedBox(
-          decoration: MdBlockStyles.quoteDecoration(theme),
-          child: Padding(
-            padding: MdBlockChrome.quoteBodyPadding(),
-            child: bodyPlaceholder,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MdBlockChrome.buildPrefix(
+            block,
+            theme.textTheme.bodyLarge,
+            visible: true,
+            onTaskToggle: onTaskToggle,
+            accentColor: theme.colorScheme.primary,
           ),
-        ),
-      CodeBlock() => Padding(
-          padding: MdBlockChrome.codeBlockPadding(),
+          Expanded(child: bodyPlaceholder),
+        ],
+      ),
+      QuoteBlock() => DecoratedBox(
+        decoration: MdBlockStyles.quoteDecoration(theme),
+        child: Padding(
+          padding: MdBlockChrome.quoteBodyPadding(),
           child: bodyPlaceholder,
         ),
+      ),
+      CodeBlock() => Padding(
+        padding: MdBlockChrome.codeBlockPadding(),
+        child: bodyPlaceholder,
+      ),
       _ => _emptyParagraphBody(theme, bodyPlaceholder),
     };
   }
@@ -218,7 +216,12 @@ class _ImageContent extends StatelessWidget {
         padding: const EdgeInsets.symmetric(
           vertical: MdBlockStyles.imageContentVerticalPadding,
         ),
-        child: Image.network(src, fit: BoxFit.contain),
+        child: Image.network(
+          src,
+          fit: BoxFit.contain,
+          // TLS/握手失败（HandshakeException）不得冒成未捕获错误把 debug 会话打崩。
+          errorBuilder: (context, error, stackTrace) => _brokenImageFallback(),
+        ),
       );
     }
 
@@ -237,7 +240,14 @@ class _ImageContent extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
         vertical: MdBlockStyles.imageContentVerticalPadding,
       ),
-      child: Image.file(file, fit: BoxFit.contain),
+      child: Image.file(
+        file,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => _brokenImageFallback(),
+      ),
     );
   }
+
+  /// 网络握手失败或本地文件损坏时显示 alt / src，避免 Image 把异常抛给 FlutterError。
+  Widget _brokenImageFallback() => Text(alt.isEmpty ? src : alt);
 }

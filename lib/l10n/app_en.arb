@@ -7,6 +7,20 @@
   "immersiveSourceHint": "Markdown source",
   "memos": "Notes",
   "newMemo": "New",
+  "newFile": "New file",
+  "newFolder": "New folder",
+  "goToParentDirectory": "Go to parent folder",
+  "createFolderTitle": "New folder",
+  "renameFolderTitle": "Rename folder",
+  "folderNameLabel": "Folder name",
+  "folderNameHint": "Enter a folder name",
+  "deleteFolderTitle": "Delete folder",
+  "deleteFolderConfirm": "Delete \"{title}\" and everything inside? You can restore it from trash.",
+  "@deleteFolderConfirm": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
   "collapseSidebar": "Collapse sidebar",
   "expandSidebar": "Expand sidebar",
   "searchHint": "Search keywords…",
@@ -19,6 +33,18 @@
   "emptyMemoList": "No notes yet\nTap + to create one",
   "revealInExplorer": "Show in file manager",
   "rename": "Rename",
+  "moveTo": "Move to",
+  "setFolderColor": "Set color",
+  "clearFolderColor": "Clear color",
+  "folderColorTitle": "Set color",
+  "setFolderColorFailed": "Failed to set color: {error}",
+  "@setFolderColorFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "moveToTitle": "Move to",
+  "moveToRoot": "Root",
   "delete": "Delete",
   "todayAt": "Today {time}",
   "yesterdayAt": "Yesterday {time}",
@@ -80,7 +106,11 @@
     }
   },
   "importConfirmTitle": "Import backup",
-  "importConfirmMessage": "Import will overwrite current notes and settings. Continue?",
+  "importConfirmMessage": "Choose how to import.",
+  "importModeMerge": "Merge",
+  "importModeMergeHint": "Merge backup data into local data.",
+  "importModeOverwrite": "Overwrite",
+  "importModeOverwriteHint": "Replace local data with the backup. Some files may be deleted.",
   "exportFailed": "Export failed: {error}",
   "@exportFailed": {
     "placeholders": {
@@ -136,6 +166,8 @@
   "insertImageFailed": "Failed to insert image: {error}",
   "renamed": "Renamed",
   "renameFailed": "Rename failed: {error}",
+  "moved": "Moved",
+  "moveFailed": "Move failed: {error}",
   "revealFailed": "Unable to open folder: {error}",
   "deleted": "Deleted",
   "deleteFailed": "Delete failed: {error}",

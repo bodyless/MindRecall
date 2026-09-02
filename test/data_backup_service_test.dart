@@ -106,7 +106,10 @@ void main() {
       '{"themeMode":"light","localeCode":"zh","fontSize":"small"}',
     );
 
-    final result = await backup.importFromDirectory(backupRoot.path);
+    final result = await backup.importFromDirectory(
+      backupRoot.path,
+      mode: DataBackupImportMode.overwrite,
+    );
     expect(result.memoFileCount, 1);
     expect(result.includedPreferences, isTrue);
     expect(File(p.join(memosDir.path, '222.md')).existsSync(), isTrue);
@@ -117,6 +120,51 @@ void main() {
     );
     expect(prefsService.preferences.themeMode, ThemeMode.dark);
     expect(prefsService.preferences.localeCode, 'en');
+  });
+
+  test('merge import 空备份不清空本地文档', () async {
+    await File(p.join(memosDir.path, 'old.md')).writeAsString('旧');
+    final backupRoot = Directory(p.join(tempRoot.path, 'MindRecall_Backup_empty'));
+    final backupMemos = Directory(p.join(backupRoot.path, 'MindRecall'));
+    await backupMemos.create(recursive: true);
+
+    final result = await backup.importFromDirectory(backupRoot.path);
+    expect(result.memoFileCount, 0);
+    expect(File(p.join(memosDir.path, 'old.md')).existsSync(), isTrue);
+    expect(await File(p.join(memosDir.path, 'old.md')).readAsString(), '旧');
+  });
+
+  test('merge import 按文件名添加并覆盖同名', () async {
+    await File(p.join(memosDir.path, 'keep.md')).writeAsString('保留');
+    await File(p.join(memosDir.path, 'same.md')).writeAsString('旧同名');
+    final backupRoot = Directory(p.join(tempRoot.path, 'MindRecall_Backup_merge'));
+    final backupMemos = Directory(p.join(backupRoot.path, 'MindRecall'));
+    await backupMemos.create(recursive: true);
+    await File(p.join(backupMemos.path, 'same.md')).writeAsString('新同名');
+    await File(p.join(backupMemos.path, 'new.md')).writeAsString('新增');
+
+    final result = await backup.importFromDirectory(
+      backupRoot.path,
+      mode: DataBackupImportMode.merge,
+    );
+    expect(result.memoFileCount, 2);
+    expect(await File(p.join(memosDir.path, 'keep.md')).readAsString(), '保留');
+    expect(await File(p.join(memosDir.path, 'same.md')).readAsString(), '新同名');
+    expect(await File(p.join(memosDir.path, 'new.md')).readAsString(), '新增');
+  });
+
+  test('overwrite import 空备份会清空本地文档', () async {
+    await File(p.join(memosDir.path, 'old.md')).writeAsString('旧');
+    final backupRoot = Directory(p.join(tempRoot.path, 'MindRecall_Backup_empty2'));
+    final backupMemos = Directory(p.join(backupRoot.path, 'MindRecall'));
+    await backupMemos.create(recursive: true);
+
+    final result = await backup.importFromDirectory(
+      backupRoot.path,
+      mode: DataBackupImportMode.overwrite,
+    );
+    expect(result.memoFileCount, 0);
+    expect(File(p.join(memosDir.path, 'old.md')).existsSync(), isFalse);
   });
 
   test('copyFileReplacing 覆盖已存在的目标文件', () async {

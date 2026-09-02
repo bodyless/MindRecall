@@ -56,13 +56,16 @@ bool hasRenderedInlineFormatting(MdBlock block) {
   return nodes.any((node) => node is! TextInline);
 }
 
-/// 更新支持行内格式的块上的 markdown 文本。
+/// 把行内 markdown / plain 写回可编辑块；标题与代码块同样要更新，不能原样返回。
 MdBlock copyBlockInlineMarkdown(MdBlock block, String markdown) {
   return switch (block) {
     ParagraphBlock() => block.copyWith(text: markdown),
-    BulletBlock() => block.copyWithPlainText(markdown),
-    OrderedBlock() => block.copyWithPlainText(markdown),
-    QuoteBlock() => block.copyWithPlainText(markdown),
+    BulletBlock() ||
+    OrderedBlock() ||
+    QuoteBlock() ||
+    HeadingBlock() ||
+    CodeBlock() =>
+      block.copyWithPlainText(markdown),
     _ => block,
   };
 }
@@ -193,6 +196,37 @@ void renumberOrderedBlocksFrom(List<MdBlock> blocks, int start) {
   }
 }
 
+/// 换块类型后，对 [index] 邻近的有序连续段重编号。
+///
+/// 有序项改为正文/无序会切断连续段，后段须从 `1.` 起重计；
+/// 正文改为有序可能把两段接成一段，须整段重排。
+/// **禁止**只在新块本身是 [OrderedBlock] 时重编号。
+void renumberOrderedBlocksAround(List<MdBlock> blocks, int index) {
+  if (blocks.isEmpty) {
+    return;
+  }
+  final starts = <int>{};
+  void consider(int probe) {
+    if (probe < 0 || probe >= blocks.length) {
+      return;
+    }
+    if (blocks[probe] is OrderedBlock) {
+      starts.add(orderedRunStart(blocks, probe));
+    }
+  }
+
+  consider(index - 1);
+  consider(index);
+  var after = index + 1;
+  while (after < blocks.length && blocks[after] is! OrderedBlock) {
+    after++;
+  }
+  consider(after);
+  for (final start in starts) {
+    renumberOrderedBlocksFrom(blocks, start);
+  }
+}
+
 /// 删除下标 [removedAtIndex] 的块后，对剩余有序列表连续段重编号。
 void renumberOrderedBlocksAfterRemoval(List<MdBlock> blocks, int removedAtIndex) {
   if (blocks.isEmpty) {
@@ -318,13 +352,7 @@ String normalizePastedMarkdown(String raw) {
 }
 
 void _renumberAround(List<MdBlock> blocks, int index) {
-  if (blocks.isEmpty) {
-    return;
-  }
-  final start = orderedRunStart(blocks, index.clamp(0, blocks.length - 1));
-  if (blocks[start] is OrderedBlock) {
-    renumberOrderedBlocksFrom(blocks, start);
-  }
+  renumberOrderedBlocksAround(blocks, index);
 }
 
 /// 保留活动块类型，写入光标前 plain（含行内格式时走 applyPlainTextChange）。

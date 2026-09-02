@@ -1,12 +1,4 @@
-## 目标
-
-在编辑/实时工具栏增加与无序、有序列表互斥的勾选列表（GFM `- [ ]` / `- [x]`），实时模式点击前缀可切换勾选，预览只读显示。
-
-## 整体方案
-
-复用 `BulletBlock` 增加 `bool? checked`（`null` 为 `•`，非 `null` 为勾选），解析优先于普通 bullet；工具栏三按钮经现有换型管道互斥替换前缀；实时前缀可点切换，预览不传回调。
-
-## 任务
+## 步骤 1：勾选列表
 
 - [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `BulletBlock` 增加可选字段 `bool? checked`（默认 `null` 表示普通无序列表）；
 - [x] 在 `lib/core/markdown/ast/md_block.dart` 的 `BulletBlock.copyWithPlainText` 写回正文时保留原 `checked`，避免键入丢失勾选态；

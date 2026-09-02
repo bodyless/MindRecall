@@ -30,6 +30,35 @@ class AppLocalizationsZh extends AppLocalizations {
   String get newMemo => '新建';
 
   @override
+  String get newFile => '新建文件';
+
+  @override
+  String get newFolder => '新建文件夹';
+
+  @override
+  String get goToParentDirectory => '返回上级目录';
+
+  @override
+  String get createFolderTitle => '新建文件夹';
+
+  @override
+  String get renameFolderTitle => '重命名文件夹';
+
+  @override
+  String get folderNameLabel => '文件夹名';
+
+  @override
+  String get folderNameHint => '输入文件夹名称';
+
+  @override
+  String get deleteFolderTitle => '删除文件夹';
+
+  @override
+  String deleteFolderConfirm(String title) {
+    return '确定删除「$title」及其全部内容吗？可在回收站恢复。';
+  }
+
+  @override
   String get collapseSidebar => '收起侧栏';
 
   @override
@@ -68,6 +97,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get rename => '重命名';
+
+  @override
+  String get moveTo => '移动到';
+
+  @override
+  String get setFolderColor => '设置颜色';
+
+  @override
+  String get clearFolderColor => '清除颜色';
+
+  @override
+  String get folderColorTitle => '设置颜色';
+
+  @override
+  String setFolderColorFailed(String error) {
+    return '设置颜色失败：$error';
+  }
+
+  @override
+  String get moveToTitle => '移动到';
+
+  @override
+  String get moveToRoot => '根目录';
 
   @override
   String get delete => '删除';
@@ -207,7 +259,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importConfirmTitle => '导入备份';
 
   @override
-  String get importConfirmMessage => '导入将覆盖当前本地文档与用户配置，是否继续？';
+  String get importConfirmMessage => '请选择导入方式。';
+
+  @override
+  String get importModeMerge => '合并数据';
+
+  @override
+  String get importModeMergeHint => '将备份数据合并入本地数据。';
+
+  @override
+  String get importModeOverwrite => '覆盖数据';
+
+  @override
+  String get importModeOverwriteHint => '将备份数据替换本地数据，可能会有文件被删除。';
 
   @override
   String exportFailed(String error) {
@@ -345,6 +409,14 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String renameFailed(String error) {
     return '重命名失败：$error';
+  }
+
+  @override
+  String get moved => '已移动';
+
+  @override
+  String moveFailed(String error) {
+    return '移动失败：$error';
   }
 
   @override

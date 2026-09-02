@@ -80,3 +80,5 @@ disable-model-invocation: true
 ## 交付
 
 用中文说明：实现了哪个 propose、勾选了哪些步骤/任务、改了哪些工程文件、测试结果。因缺口或未决停手：只列问题，不改工程。完成后提示 **mode-archive**。
+
+该方案 `tasks.md` 已全部勾选且工程门禁通过后：读取 `pubspec.yaml` 顶层 `version: 大.小.迭代`（三个非负整数、无 `+`），将小版本 +1、迭代置 0 后写回。不要把升版写进被落实方案的 `tasks.md`。缺口停手或未全部勾完则不改；不改大版本。升版只动 `pubspec.yaml` 顶层 `version:`，不改依赖版本、不添加 `+buildNumber`、不为 `versionCode` 做推导。

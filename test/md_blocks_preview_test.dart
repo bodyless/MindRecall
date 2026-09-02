@@ -54,13 +54,28 @@ void main() {
       );
     });
 
+    testWidgets('default padding matches live body insets', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: MdBlocksPreview(markdown: 'hi', selectable: false),
+          ),
+        ),
+      );
+
+      final preview = tester.widget<MdBlocksPreview>(
+        find.byType(MdBlocksPreview),
+      );
+      expect(preview.padding.top, MdBlockStyles.editorBodyTopPadding);
+      expect(preview.padding.left, MdBlockStyles.editorBodyHorizontalPadding);
+      expect(preview.padding.right, MdBlockStyles.editorBodyHorizontalPadding);
+    });
+
     testWidgets('renders bold in Chinese paragraph preview', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.light,
-          home: const Scaffold(
-            body: MdBlocksPreview(markdown: '这是**粗体**测试'),
-          ),
+          home: const Scaffold(body: MdBlocksPreview(markdown: '这是**粗体**测试')),
         ),
       );
       await tester.pumpAndSettle();

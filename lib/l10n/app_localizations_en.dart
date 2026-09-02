@@ -30,6 +30,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newMemo => 'New';
 
   @override
+  String get newFile => 'New file';
+
+  @override
+  String get newFolder => 'New folder';
+
+  @override
+  String get goToParentDirectory => 'Go to parent folder';
+
+  @override
+  String get createFolderTitle => 'New folder';
+
+  @override
+  String get renameFolderTitle => 'Rename folder';
+
+  @override
+  String get folderNameLabel => 'Folder name';
+
+  @override
+  String get folderNameHint => 'Enter a folder name';
+
+  @override
+  String get deleteFolderTitle => 'Delete folder';
+
+  @override
+  String deleteFolderConfirm(String title) {
+    return 'Delete \"$title\" and everything inside? You can restore it from trash.';
+  }
+
+  @override
   String get collapseSidebar => 'Collapse sidebar';
 
   @override
@@ -68,6 +97,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rename => 'Rename';
+
+  @override
+  String get moveTo => 'Move to';
+
+  @override
+  String get setFolderColor => 'Set color';
+
+  @override
+  String get clearFolderColor => 'Clear color';
+
+  @override
+  String get folderColorTitle => 'Set color';
+
+  @override
+  String setFolderColorFailed(String error) {
+    return 'Failed to set color: $error';
+  }
+
+  @override
+  String get moveToTitle => 'Move to';
+
+  @override
+  String get moveToRoot => 'Root';
 
   @override
   String get delete => 'Delete';
@@ -210,8 +262,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importConfirmTitle => 'Import backup';
 
   @override
-  String get importConfirmMessage =>
-      'Import will overwrite current notes and settings. Continue?';
+  String get importConfirmMessage => 'Choose how to import.';
+
+  @override
+  String get importModeMerge => 'Merge';
+
+  @override
+  String get importModeMergeHint => 'Merge backup data into local data.';
+
+  @override
+  String get importModeOverwrite => 'Overwrite';
+
+  @override
+  String get importModeOverwriteHint =>
+      'Replace local data with the backup. Some files may be deleted.';
 
   @override
   String exportFailed(String error) {
@@ -350,6 +414,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String renameFailed(String error) {
     return 'Rename failed: $error';
+  }
+
+  @override
+  String get moved => 'Moved';
+
+  @override
+  String moveFailed(String error) {
+    return 'Move failed: $error';
   }
 
   @override

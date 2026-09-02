@@ -55,3 +55,41 @@ final class LiveInputSession {
     scrollController.dispose();
   }
 }
+
+/// 关侧栏后是否把焦点抢回编辑区：仅同篇且未被搜索跳转等禁止。
+bool shouldRestoreEditorFocusAfterSuspend({
+  required bool restoreRequested,
+  required bool suppressRestore,
+  required String? suspendedMemoId,
+  required String? activeMemoId,
+}) {
+  if (!restoreRequested || suppressRestore) {
+    return false;
+  }
+  if (suspendedMemoId == null || activeMemoId == null) {
+    return false;
+  }
+  return suspendedMemoId == activeMemoId;
+}
+
+/// 用户收起 IME 时是否应丢掉焦点（须由调用方传入「键盘正在落下」）。
+///
+/// [imeDismissed] 为假时即使已聚焦、inset 仍为 0 也不 unfocus，避免点选后键盘尚未升起就被清掉。
+bool shouldUnfocusOnImeUserDismiss({
+  required bool hasFocus,
+  required bool editorFocusSuspended,
+  required bool layoutTransitionActive,
+  required bool deferFocusBlur,
+  required bool imeDismissed,
+}) {
+  if (!hasFocus || !imeDismissed) {
+    return false;
+  }
+  if (editorFocusSuspended || layoutTransitionActive || deferFocusBlur) {
+    return false;
+  }
+  return true;
+}
+
+/// 实时活动块 Overlay 失焦时不参与命中，手势交给 [ListView]。
+bool liveOverlayIgnoresPointers({required bool hasFocus}) => !hasFocus;

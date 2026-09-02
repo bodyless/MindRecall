@@ -74,4 +74,40 @@ void main() {
     expect(find.text('点击此处输入文本'), findsNothing);
     expect(find.byKey(LiveMarkdownEditor.emptyBodyFillKey), findsNothing);
   });
+
+  testWidgets('失焦时长段活动块可点选再聚焦', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    final controller = TextEditingController(text: 'hello world');
+    addTearDown(controller.dispose);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 400,
+            child: LiveMarkdownEditor(
+              controller: controller,
+              focusNode: focus,
+              scrollController: scroll,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(focus.hasFocus, isFalse);
+
+    await tester.tap(find.text('hello world').hitTestable());
+    await tester.pump();
+    await tester.pump();
+    expect(focus.hasFocus, isTrue);
+  });
 }

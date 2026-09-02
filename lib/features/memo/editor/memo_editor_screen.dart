@@ -23,17 +23,23 @@ import 'package:mind_recall/features/memo/editor/plain_text/markdown_editor_help
 import 'package:mind_recall/features/memo/editor/widgets/markdown_toolbar.dart';
 import 'package:mind_recall/features/memo/editor/widgets/memo_markdown_preview.dart';
 import 'package:mind_recall/features/memo/editor/widgets/rename_memo_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/folder_name_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/folder_color_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/move_to_folder_dialog.dart';
 import 'package:mind_recall/features/memo/editor/widgets/trash_restore_dialog.dart';
 import 'package:mind_recall/features/memo/editor/widgets/link_insert_dialog.dart';
+import 'package:mind_recall/features/memo/editor/widgets/import_backup_dialog.dart';
 import 'package:mind_recall/features/memo/editor/widgets/keyboard_aware_markdown_toolbar.dart';
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel_logic.dart';
 import 'package:mind_recall/features/memo/memo_markdown_image_resolver.dart';
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel.dart';
 import 'package:mind_recall/models/memo.dart';
+import 'package:mind_recall/models/memo_folder.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/android_process_text.dart';
 import 'package:mind_recall/services/android_storage_permission.dart';
+import 'package:mind_recall/services/data_backup_service.dart';
 import 'package:mind_recall/services/memo_image_service.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 import 'package:mind_recall/services/process_text_capture.dart';
@@ -148,11 +154,20 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       ImeMetricsObserver(_onEditKeyboardMetricsChanged);
 
   /// 侧滑开抽屉门禁：仅在系统 IME inset 越过阈值导致「可否侧滑」翻转时 setState。
-  late final ImeMetricsObserver _drawerImeGateObserver =
-      ImeMetricsObserver(_syncDrawerOpenDragGestureGate);
+  late final ImeMetricsObserver _drawerImeGateObserver = ImeMetricsObserver(
+    _syncDrawerOpenDragGestureGate,
+  );
+
+  /// 用户收起 IME 时丢掉标题/正文焦点（宽屏也跑，勿复用侧滑门禁的 isWide 早退）。
+  late final ImeMetricsObserver _imeUserDismissObserver = ImeMetricsObserver(
+    _onImeUserDismissMetrics,
+  );
 
   /// 上次采样的系统 IME inset（逻辑像素），用于检测侧滑门禁翻转。
   double _drawerGateInsetLogical = 0;
+
+  /// 用户收 IME 下落检测用的上一帧 inset（逻辑像素）。
+  double _lastImeInsetLogical = 0;
 
   /// 当前正文模式对应的 Focus（预览无正文焦点，回落编辑 session）。
   FocusNode get _activeBodyFocus => _viewMode == EditorViewMode.live
@@ -169,6 +184,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     super.initState();
     WidgetsBinding.instance.addObserver(_editKeyboardMetricsObserver);
     WidgetsBinding.instance.addObserver(_drawerImeGateObserver);
+    WidgetsBinding.instance.addObserver(_imeUserDismissObserver);
     _workspace.addListener(_onWorkspaceChanged);
     _titleController.addListener(_onEditorChanged);
     _contentController.addListener(_onContentControllerChanged);
@@ -192,6 +208,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     _editIme.dispose();
     WidgetsBinding.instance.removeObserver(_editKeyboardMetricsObserver);
     WidgetsBinding.instance.removeObserver(_drawerImeGateObserver);
+    WidgetsBinding.instance.removeObserver(_imeUserDismissObserver);
     _titleController.dispose();
     _contentController.dispose();
     _searchController.dispose();
@@ -224,9 +241,11 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         }
 
         if (_workspace.memos.isNotEmpty) {
-          final lastOpenedId = _workspace.lastOpenedMemoId ??
+          final lastOpenedId =
+              _workspace.lastOpenedMemoId ??
               widget.prefsService.preferences.lastOpenedMemoId;
-          final restoreId = lastOpenedId != null &&
+          final restoreId =
+              lastOpenedId != null &&
                   _workspace.memos.any((memo) => memo.id == lastOpenedId)
               ? lastOpenedId
               : _workspace.memos.first.id;
@@ -292,12 +311,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
     try {
-      final info = await PackageInfo.fromPlatform()
-          .timeout(const Duration(seconds: 2));
+      final info = await PackageInfo.fromPlatform().timeout(
+        const Duration(seconds: 2),
+      );
       if (!mounted) {
         return;
       }
-      setState(() => _appVersionLabel = '${info.version}+${info.buildNumber}');
+      setState(() => _appVersionLabel = info.version);
     } catch (_) {
       // ????????????????
     }
@@ -307,6 +327,9 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   bool _restoreContentFocusAfterSuspend = false;
   bool _restoreTitleFocusAfterSuspend = false;
   bool _drawerOpen = false;
+  String? _focusRestoreMemoId;
+  bool _suppressFocusRestoreAfterSuspend = false;
+  bool _imeUserDismissUnfocus = false;
 
   /// 收起输入法后再开抽屉，避免 IME 下滑与 Drawer 滑入叠动画卡顿。
   /// 关闭抽屉后恢复焦点的缓冲（宜短，避免侧栏↔键盘切换体感拖沓）。
@@ -317,7 +340,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     if (_editorFocusSuspended) {
       return;
     }
-    _restoreContentFocusAfterSuspend = _editSession.focusNode.hasFocus ||
+    _focusRestoreMemoId = _activeMemoId;
+    _suppressFocusRestoreAfterSuspend = false;
+    _restoreContentFocusAfterSuspend =
+        _editSession.focusNode.hasFocus ||
         _liveSession.focusNode.hasFocus ||
         _liveSession.hadFocus;
     _restoreTitleFocusAfterSuspend = _titleFocusNode.hasFocus;
@@ -326,7 +352,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     // 立刻收起工具栏并 snap 掉 IME 留白，避免键盘下落期间每帧改 padding 与抽屉抢 GPU。
     final hideChrome =
         _editSession.focusNode.hasFocus || _liveSession.inputSessionActive;
-    final hadInset = _editSession.keyboardBottomInset != 0 ||
+    final hadInset =
+        _editSession.keyboardBottomInset != 0 ||
         _settledImeKeyboardInset.value != 0 ||
         _toolbarImeKeyboardInset.value != 0;
     if (hideChrome || hadInset) {
@@ -341,7 +368,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
   }
 
-  /// 系统界面关闭后，按需恢复此前编辑焦点。
+  /// 系统界面关闭后，仅同篇且未被禁止时恢复此前编辑焦点。
   void _resumeEditorFocus() {
     if (!_editorFocusSuspended) {
       return;
@@ -350,13 +377,23 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     if (_drawerOpen) {
       return;
     }
-    final shouldRestoreContent = _restoreContentFocusAfterSuspend &&
-        _viewMode != EditorViewMode.preview;
-    final shouldRestoreTitle = _restoreTitleFocusAfterSuspend &&
-        _viewMode != EditorViewMode.preview;
+    final allowRestore = shouldRestoreEditorFocusAfterSuspend(
+      restoreRequested:
+          (_restoreContentFocusAfterSuspend ||
+              _restoreTitleFocusAfterSuspend) &&
+          _viewMode != EditorViewMode.preview,
+      suppressRestore: _suppressFocusRestoreAfterSuspend,
+      suspendedMemoId: _focusRestoreMemoId,
+      activeMemoId: _activeMemoId,
+    );
+    final shouldRestoreContent =
+        allowRestore && _restoreContentFocusAfterSuspend;
+    final shouldRestoreTitle = allowRestore && _restoreTitleFocusAfterSuspend;
     _editorFocusSuspended = false;
     _restoreContentFocusAfterSuspend = false;
     _restoreTitleFocusAfterSuspend = false;
+    _suppressFocusRestoreAfterSuspend = false;
+    _focusRestoreMemoId = null;
     if (!mounted) {
       return;
     }
@@ -381,6 +418,27 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     });
   }
 
+  /// 丢掉标题与两套正文焦点；不改变 suspend 标志（换篇 / 收 IME / 搜索跳转）。
+  void _dropEditorFocus() {
+    final hideChrome =
+        _titleFocusNode.hasFocus ||
+        _editSession.focusNode.hasFocus ||
+        _liveSession.inputSessionActive;
+    final hadInset =
+        _editSession.keyboardBottomInset != 0 ||
+        _settledImeKeyboardInset.value != 0 ||
+        _toolbarImeKeyboardInset.value != 0;
+    _liveSession.clearSessionFlags();
+    _editSession.resetKeyboardInsets();
+    _clearImeInsets();
+    _editSession.focusNode.unfocus();
+    _liveSession.focusNode.unfocus();
+    _titleFocusNode.unfocus();
+    if (hideChrome || hadInset) {
+      setState(() {});
+    }
+  }
+
   /// 移动端打开文件抽屉：先 flush 实时 AST，再等 IME 真正收起后打开。
   Future<void> _openMobileDrawer() async {
     if (_viewMode == EditorViewMode.live) {
@@ -390,7 +448,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     final view = View.of(context);
     final insetBottom = view.viewInsets.bottom / view.devicePixelRatio;
     final waitForIme = drawerShouldWaitForIme(
-      editorFocused: _editSession.focusNode.hasFocus ||
+      editorFocused:
+          _editSession.focusNode.hasFocus ||
           _liveSession.focusNode.hasFocus ||
           _titleFocusNode.hasFocus,
       insetBottomLogical: insetBottom,
@@ -473,8 +532,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     if (!mounted) {
       return;
     }
-    final isWide =
-        MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
+    final isWide = MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
     if (isWide) {
       return;
     }
@@ -500,10 +558,14 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
     final hasFocus = _liveSession.focusNode.hasFocus;
     if (hasFocus) {
+      _imeUserDismissUnfocus = false;
       if (!_liveSession.hadFocus) {
         _liveSession.hadFocus = true;
         setState(() {});
       }
+      return;
+    }
+    if (_imeUserDismissUnfocus) {
       return;
     }
     if (_editorFocusSuspended) {
@@ -521,6 +583,9 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       if (!mounted || _viewMode != EditorViewMode.live) {
         return;
       }
+      if (_imeUserDismissUnfocus) {
+        return;
+      }
       if (_liveSession.focusNode.hasFocus) {
         _liveSession.hadFocus = true;
         return;
@@ -529,6 +594,9 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         return;
       }
       // 宽限期后再抢一次；仍无焦点则结束实时输入会话。
+      if (_imeUserDismissUnfocus) {
+        return;
+      }
       _liveEditorKey.currentState?.restoreFocus();
       Future.delayed(_liveFocusRestoreWait, () {
         if (!mounted || _viewMode != EditorViewMode.live) {
@@ -601,6 +669,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       ),
     );
   }
+
   void _onEditKeyboardMetricsChanged() {
     if (!mounted || _viewMode != EditorViewMode.edit) {
       return;
@@ -611,6 +680,43 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       cacheKey: imeHeightCacheKeyForView(view),
       inset: inset,
     );
+  }
+
+  /// 用户收起系统键盘时丢掉光标；宽屏也执行。
+  void _onImeUserDismissMetrics() {
+    if (!mounted) {
+      return;
+    }
+    final view = View.of(context);
+    final inset = view.viewInsets.bottom / view.devicePixelRatio;
+    final previous = _lastImeInsetLogical;
+    _lastImeInsetLogical = inset;
+    // MIUI 收键盘后 inset 可能在 0 与小值间抖动；同一轮只丢一次焦点。
+    if (_imeUserDismissUnfocus) {
+      return;
+    }
+    final imeDismissed = previous > 0.5 && inset <= 0.5;
+    final hasFocus =
+        _titleFocusNode.hasFocus ||
+        _editSession.focusNode.hasFocus ||
+        _liveSession.focusNode.hasFocus;
+    if (!shouldUnfocusOnImeUserDismiss(
+      hasFocus: hasFocus,
+      editorFocusSuspended: _editorFocusSuspended,
+      layoutTransitionActive:
+          _liveEditorKey.currentState?.layoutTransitionActive ?? false,
+      deferFocusBlur: _liveSession.deferFocusBlur,
+      imeDismissed: imeDismissed,
+    )) {
+      return;
+    }
+    _imeUserDismissUnfocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_imeUserDismissUnfocus) {
+        return;
+      }
+      _dropEditorFocus();
+    });
   }
 
   Future<void> _refreshMemoList({String? selectId}) {
@@ -716,6 +822,14 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       return;
     }
 
+    // 侧栏 ListTile onTap 仍在手势分发中；此时同步 unfocus/setState
+    // 会拆掉命中目标，MIUI 上表现为 ANR，debug 会话 HandshakeException 断连。
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) {
+      return;
+    }
+
+    _dropEditorFocus();
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     _suppressAutoSave = true;
@@ -741,10 +855,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   }
 
   Future<void> _openSearchResult(MemoSearchResult result) async {
-    await _openMemo(
-      result.memoId,
-      jumpTarget: result.jumpTarget,
-    );
+    _suppressFocusRestoreAfterSuspend = true;
+    await _openMemo(result.memoId, jumpTarget: result.jumpTarget);
   }
 
   Future<void> _createNewMemo({bool refreshList = true}) async {
@@ -830,7 +942,6 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       baseOffset: start,
       extentOffset: end,
     );
-    _activeBodyFocus.requestFocus();
     _scrollContentToLine(target.lineNumber);
   }
 
@@ -907,6 +1018,40 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     return confirmed ?? false;
   }
 
+  Future<bool> _confirmDeleteFolder(String title) async {
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.deleteFolderTitle),
+        content: Text(l10n.deleteFolderConfirm(title)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<void> _openRemainingOrCreate(List<Memo> remaining) async {
+    if (remaining.isNotEmpty) {
+      await _openMemo(remaining.first.id, refreshList: false);
+    } else {
+      await _createNewMemo(refreshList: false);
+    }
+  }
+
   Future<void> _pickAndInsertImage() async {
     final memoId = _activeMemoId;
     if (memoId == null) {
@@ -929,8 +1074,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
 
     try {
+      final memo = _memoById(memoId);
+      if (memo == null) {
+        return;
+      }
       final snippet = await memoImageService.copyAndBuildMarkdown(
         memoId: memoId,
+        memoFilePath: memo.filePath,
         sourcePath: sourcePath,
       );
       if (!mounted) {
@@ -938,13 +1088,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       }
 
       _suppressAutoSave = true;
-      MarkdownEditorHelper.insertAtCursor(
-        _contentController,
-        '\n$snippet\n',
-      );
+      MarkdownEditorHelper.insertAtCursor(_contentController, '\n$snippet\n');
       _suppressAutoSave = false;
       _onEditorChanged();
-      _editSession.focusNode.requestFocus();
+      _activeBodyFocus.requestFocus();
+      if (_viewMode == EditorViewMode.live) {
+        _liveEditorKey.currentState?.restoreFocus();
+      }
     } catch (error) {
       _showMessage(l10n.insertImageFailed('$error'));
     }
@@ -961,8 +1111,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     if (_viewMode != EditorViewMode.live) {
       final selection = _contentController.selection;
       if (selection.isValid && !selection.isCollapsed) {
-        initialText =
-            _contentController.text.substring(selection.start, selection.end);
+        initialText = _contentController.text.substring(
+          selection.start,
+          selection.end,
+        );
       }
     }
 
@@ -1066,6 +1218,84 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
   }
 
+  Future<void> _moveMemo(String id) async {
+    final memo = _memoById(id);
+    if (memo == null) {
+      return;
+    }
+    final sourceParent = await _storage.relativeParentOfPath(memo.filePath);
+    await _pickAndMove(
+      sourceParentRelativeDir: sourceParent,
+      movingFolderRelativeDir: null,
+      onMove: (dest) => _workspace.moveMemo(id: id, destRelativeDir: dest),
+    );
+  }
+
+  Future<void> _moveFolder(String id) async {
+    MemoDirEntry? entry;
+    for (final item in _workspace.dirEntries) {
+      if (item.isFolder && item.id == id) {
+        entry = item;
+        break;
+      }
+    }
+    if (entry == null) {
+      return;
+    }
+    final relative = await _storage.relativeDirOfFolder(
+      entry.folder!.directoryPath,
+    );
+    await _pickAndMove(
+      sourceParentRelativeDir: MemoStorageService.parentRelativeDir(relative),
+      movingFolderRelativeDir: relative,
+      onMove: (dest) => _workspace.moveFolder(id: id, destRelativeDir: dest),
+    );
+  }
+
+  Future<void> _pickAndMove({
+    required String sourceParentRelativeDir,
+    required String? movingFolderRelativeDir,
+    required Future<void> Function(String dest) onMove,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    var tree = await _workspace.listFolderTree();
+    tree = sortMemoFolderTree(
+      tree,
+      pinnedFolderIds: _workspace.pinnedFolderIds,
+    );
+    if (movingFolderRelativeDir != null) {
+      tree = excludeFolderFromMoveTree(
+        tree,
+        movingFolderRelativeDir: movingFolderRelativeDir,
+      );
+    }
+    _suspendEditorFocus();
+    final dest = await showDialog<String>(
+      context: context,
+      builder: (context) => MoveToFolderDialog(
+        tree: tree,
+        sourceParentRelativeDir: sourceParentRelativeDir,
+      ),
+    );
+    _resumeEditorFocus();
+    if (dest == null || !mounted) {
+      return;
+    }
+    _suppressAutoSave = true;
+    try {
+      await onMove(dest);
+      if (mounted) {
+        _showMessage(l10n.moved);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(l10n.moveFailed('$error'));
+      }
+    } finally {
+      _suppressAutoSave = false;
+    }
+  }
+
   Future<void> _revealMemoInExplorer(String id) async {
     final memo = _memoById(id);
     if (memo == null) {
@@ -1086,9 +1316,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
 
     final l10n = AppLocalizations.of(context)!;
-    final confirmed = await _confirmDelete(
-      memo.displayTitle(l10n.untitled),
-    );
+    final confirmed = await _confirmDelete(memo.displayTitle(l10n.untitled));
     if (!confirmed || !mounted) {
       return;
     }
@@ -1106,11 +1334,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       }
 
       if (result.wasActive) {
-        if (result.remaining.isNotEmpty) {
-          await _openMemo(result.remaining.first.id, refreshList: false);
-        } else {
-          await _createNewMemo(refreshList: false);
-        }
+        await _openRemainingOrCreate(result.remaining);
       }
 
       _showMessage(l10n.deleted);
@@ -1121,6 +1345,122 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
 
   Future<void> _togglePinMemo(String id) {
     return _workspace.togglePin(id);
+  }
+
+  Future<void> _togglePinFolder(String id) {
+    return _workspace.toggleFolderPin(id);
+  }
+
+  Future<void> _createFolder() async {
+    final l10n = AppLocalizations.of(context)!;
+    _suspendEditorFocus();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => FolderNameDialog(title: l10n.createFolderTitle),
+    );
+    _resumeEditorFocus();
+    if (name == null || name.trim().isEmpty || !mounted) {
+      return;
+    }
+    try {
+      await _workspace.createFolder(name);
+    } catch (error) {
+      _showMessage(l10n.createFailed('$error'));
+    }
+  }
+
+  Future<void> _renameFolder(String id) async {
+    MemoDirEntry? entry;
+    for (final item in _workspace.dirEntries) {
+      if (item.isFolder && item.id == id) {
+        entry = item;
+        break;
+      }
+    }
+    if (entry == null) {
+      return;
+    }
+    final initialName = entry.folder!.displayName;
+    final l10n = AppLocalizations.of(context)!;
+    _suspendEditorFocus();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => FolderNameDialog(
+        title: l10n.renameFolderTitle,
+        initialName: initialName,
+      ),
+    );
+    _resumeEditorFocus();
+    if (name == null || name.trim().isEmpty || !mounted) {
+      return;
+    }
+    try {
+      await _workspace.renameFolder(id: id, newDisplayName: name);
+      _showMessage(l10n.renamed);
+    } catch (error) {
+      _showMessage(l10n.renameFailed('$error'));
+    }
+  }
+
+  Future<void> _setFolderColor(String id) async {
+    MemoDirEntry? entry;
+    for (final item in _workspace.dirEntries) {
+      if (item.isFolder && item.id == id) {
+        entry = item;
+        break;
+      }
+    }
+    if (entry == null) {
+      return;
+    }
+    final initialColorHex = entry.folder!.colorHex;
+    final l10n = AppLocalizations.of(context)!;
+    _suspendEditorFocus();
+    final result = await showDialog<FolderColorDialogResult>(
+      context: context,
+      builder: (context) => FolderColorDialog(initialColorHex: initialColorHex),
+    );
+    _resumeEditorFocus();
+    if (result == null || !mounted) {
+      return;
+    }
+    try {
+      await _workspace.updateFolderColor(id: id, colorHex: result.colorHex);
+    } catch (error) {
+      _showMessage(l10n.setFolderColorFailed('$error'));
+    }
+  }
+
+  Future<void> _deleteFolder(String id) async {
+    MemoDirEntry? entry;
+    for (final item in _workspace.dirEntries) {
+      if (item.isFolder && item.id == id) {
+        entry = item;
+        break;
+      }
+    }
+    if (entry == null) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await _confirmDeleteFolder(entry.folder!.displayName);
+    if (!confirmed || !mounted) {
+      return;
+    }
+    try {
+      final result = await _workspace.deleteFolder(id);
+      if (!mounted) {
+        return;
+      }
+      if (result.wasActive) {
+        _autoSaveTimer?.cancel();
+        _autoSaveTimer = null;
+        await _openRemainingOrCreate(result.remaining);
+      }
+      _showMessage(l10n.deleted);
+    } catch (error) {
+      _showMessage(l10n.deleteFailed('$error'));
+    }
   }
 
   Future<void> _openSettings() async {
@@ -1166,7 +1506,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
                   widget.onDebugShowImeHudChanged!(enabled);
                   setSheetState(() {});
                 },
-          onDebugShowCursorHudChanged: widget.onDebugShowCursorHudChanged == null
+          onDebugShowCursorHudChanged:
+              widget.onDebugShowCursorHudChanged == null
               ? null
               : (enabled) {
                   widget.onDebugShowCursorHudChanged!(enabled);
@@ -1261,24 +1602,11 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   Future<bool> _importData() async {
     final l10n = AppLocalizations.of(context)!;
     try {
-      final confirmed = await showDialog<bool>(
+      final mode = await showDialog<DataBackupImportMode>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(l10n.importConfirmTitle),
-          content: Text(l10n.importConfirmMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(l10n.cancel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(l10n.confirm),
-            ),
-          ],
-        ),
+        builder: (context) => const ImportBackupDialog(),
       );
-      if (confirmed != true) {
+      if (mode == null) {
         return false;
       }
 
@@ -1302,6 +1630,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       final result = await _workspace.importFromDirectory(
         prefsService: widget.prefsService,
         selectedPath: source,
+        mode: mode,
       );
       if (!mounted) {
         return false;
@@ -1428,14 +1757,25 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
 
   Widget _buildFilePanel({VoidCallback? onCollapseSidebar}) {
     return MemoFilePanel(
-      memos: _memos,
+      dirEntries: _workspace.dirEntries,
+      currentRelativeDir: _workspace.currentRelativeDir,
       activeMemoId: _activeMemoId,
       pinnedMemoIds: _pinnedMemoIds,
+      pinnedFolderIds: _workspace.pinnedFolderIds,
       onTogglePinMemo: (id) => unawaited(_togglePinMemo(id)),
+      onTogglePinFolder: (id) => unawaited(_togglePinFolder(id)),
       onMemoSelected: (id) => unawaited(_openMemo(id)),
+      onFolderSelected: (id) => unawaited(_workspace.enterFolder(id)),
+      onGoToParent: () => unawaited(_workspace.goToParentDirectory()),
       onCreateMemo: () => unawaited(_createNewMemo()),
+      onCreateFolder: () => unawaited(_createFolder()),
       onRenameMemo: (id) => unawaited(_renameMemo(id)),
       onDeleteMemo: (id) => unawaited(_deleteMemo(id)),
+      onRenameFolder: (id) => unawaited(_renameFolder(id)),
+      onDeleteFolder: (id) => unawaited(_deleteFolder(id)),
+      onMoveMemo: (id) => unawaited(_moveMemo(id)),
+      onMoveFolder: (id) => unawaited(_moveFolder(id)),
+      onSetFolderColor: (id) => unawaited(_setFolderColor(id)),
       showRevealInExplorer: MemoStorageService.supportsRevealInExplorer,
       onRevealInExplorer: (id) => unawaited(_revealMemoInExplorer(id)),
       searchController: _searchController,
@@ -1645,9 +1985,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final color = selected
-        ? colorScheme.primary
-        : colorScheme.onSurfaceVariant;
+    final color = selected ? colorScheme.primary : colorScheme.onSurfaceVariant;
 
     return InkWell(
       onTap: onTap,
@@ -1741,8 +2079,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     final outline = Theme.of(context).colorScheme.outlineVariant;
     final layoutTransition =
         _liveEditorKey.currentState?.layoutTransitionActive ?? false;
-    final liveInputSession = isLive &&
-        (_liveSession.inputSessionActive || layoutTransition);
+    final liveInputSession =
+        isLive && (_liveSession.inputSessionActive || layoutTransition);
     // ????? viewInsets?????????????????????
 
     return Column(
@@ -1796,48 +2134,45 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
                               ),
                             )
                           : isLive
-                              ? DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: outline),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: LiveMarkdownEditor(
-                                      key: _liveEditorKey,
-                                      controller: _contentController,
-                                      focusNode: _liveSession.focusNode,
-                                      scrollController:
-                                          _liveSession.scrollController,
-                                      keyboardBottomInset:
-                                          _settledImeKeyboardInset,
-                                      toolbarKeyboardInset:
-                                          _toolbarImeKeyboardInset,
-                                      memoFilePath: _memoById(
-                                              _activeMemoId ?? '')
-                                          ?.filePath,
-                                      resolveLocalImage:
-                                          defaultMemoMarkdownImageResolver,
-                                      onInputStabilizing:
-                                          _onLiveInputStabilizing,
-                                      onLinkTap: (href) =>
-                                          unawaited(_openMarkdownLink(href)),
-                                      resolveLinkLabel:
-                                          _resolveMarkdownLinkLabel,
-                                      onUndo: () {
-                                        if (_documentHistory.canUndo) {
-                                          _undo();
-                                        }
-                                      },
-                                      onRedo: () {
-                                        if (_documentHistory.canRedo) {
-                                          _redo();
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                )
-                              : _buildContentField(),
+                          ? DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(color: outline),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LiveMarkdownEditor(
+                                  key: _liveEditorKey,
+                                  controller: _contentController,
+                                  focusNode: _liveSession.focusNode,
+                                  scrollController:
+                                      _liveSession.scrollController,
+                                  keyboardBottomInset: _settledImeKeyboardInset,
+                                  toolbarKeyboardInset:
+                                      _toolbarImeKeyboardInset,
+                                  memoFilePath: _memoById(
+                                    _activeMemoId ?? '',
+                                  )?.filePath,
+                                  resolveLocalImage:
+                                      defaultMemoMarkdownImageResolver,
+                                  onInputStabilizing: _onLiveInputStabilizing,
+                                  onLinkTap: (href) =>
+                                      unawaited(_openMarkdownLink(href)),
+                                  resolveLinkLabel: _resolveMarkdownLinkLabel,
+                                  onUndo: () {
+                                    if (_documentHistory.canUndo) {
+                                      _undo();
+                                    }
+                                  },
+                                  onRedo: () {
+                                    if (_documentHistory.canRedo) {
+                                      _redo();
+                                    }
+                                  },
+                                ),
+                              ),
+                            )
+                          : _buildContentField(),
                     );
                   },
                 ),
@@ -1921,19 +2256,13 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   Widget _buildContentField() {
     final theme = Theme.of(context);
     final bottomSafe = MediaQuery.viewPaddingOf(context).bottom;
-    final isWide =
-        MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
+    final isWide = MediaQuery.sizeOf(context).width >= kWideLayoutBreakpoint;
     final boxBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(4),
-      borderSide: BorderSide(
-        color: theme.colorScheme.outlineVariant,
-        width: 1,
-      ),
+      borderSide: BorderSide(color: theme.colorScheme.outlineVariant, width: 1),
     );
     // 与实时 ListView：基础底距 + 安全区；IME 高度在 Column spacer。
-    final contentBottom = editFieldContentBottomPadding(
-      bottomSafe: bottomSafe,
-    );
+    final contentBottom = editFieldContentBottomPadding(bottomSafe: bottomSafe);
     return ValueListenableBuilder<double>(
       valueListenable: _editIme.keyboardBottomInset,
       builder: (context, keyboardInset, _) {
@@ -1956,8 +2285,12 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
                   border: boxBorder,
                   enabledBorder: boxBorder,
                   focusedBorder: boxBorder,
-                  contentPadding:
-                      EdgeInsets.fromLTRB(16, 16, 16, contentBottom),
+                  contentPadding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    contentBottom,
+                  ),
                 ),
                 maxLines: null,
                 expands: true,

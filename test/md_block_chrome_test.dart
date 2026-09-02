@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mind_recall/core/markdown/markdown.dart';
+import 'package:mind_recall/models/user_preferences.dart';
 
 void main() {
   group('MdBlockChromeMetrics', () {
@@ -65,6 +66,13 @@ void main() {
         ),
         24,
       );
+      expect(
+        MdBlockChrome.prefixLineHeight(
+          const TextStyle(fontSize: 16, height: 1.5),
+          textScaler: const TextScaler.linear(0.75),
+        ),
+        18,
+      );
     });
 
     testWidgets('勾选前缀使用 Material check_box 图标而非系统 ☐/☑', (tester) async {
@@ -101,41 +109,27 @@ void main() {
     });
 
     testWidgets('勾选图标垂直中心贴近同行正文', (tester) async {
-      const style = TextStyle(
-        fontSize: 16,
-        height: 1.5,
-        color: Colors.black,
+      await _pumpTaskPrefixAlignment(
+        tester,
+        textScaler: TextScaler.noScaling,
       );
-      const task = BulletBlock(id: 't', text: '买牛奶', checked: false);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                MdBlockChrome.buildPrefix(
-                  task,
-                  style,
-                  visible: true,
-                ),
-                Text(
-                  '买牛奶',
-                  style: style,
-                  strutStyle: MdBlockStyles.strutFor(style),
-                ),
-              ],
-            ),
-          ),
-        ),
+      _expectTaskIconAlignedWithBody(tester);
+    });
+
+    testWidgets('小字号下勾选图标仍与正文垂直对齐', (tester) async {
+      await _pumpTaskPrefixAlignment(
+        tester,
+        textScaler: TextScaler.linear(AppFontSize.small.scale),
       );
-      await tester.pump();
-      final iconY = tester.getCenter(find.byIcon(Icons.check_box_outline_blank)).dy;
-      final textY = tester.getCenter(find.text('买牛奶')).dy;
-      expect(
-        (iconY - textY).abs(),
-        lessThan(4),
-        reason: 'iconY=$iconY textY=$textY',
+      _expectTaskIconAlignedWithBody(tester);
+    });
+
+    testWidgets('大字号下勾选图标仍与正文垂直对齐', (tester) async {
+      await _pumpTaskPrefixAlignment(
+        tester,
+        textScaler: TextScaler.linear(AppFontSize.large.scale),
       );
+      _expectTaskIconAlignedWithBody(tester);
     });
 
     testWidgets('有序/无序/勾选前缀槽等宽', (tester) async {
@@ -317,4 +311,55 @@ void main() {
       expect(text.strutStyle?.forceStrutHeight, isTrue);
     });
   });
+}
+
+Future<void> _pumpTaskPrefixAlignment(
+  WidgetTester tester, {
+  required TextScaler textScaler,
+}) async {
+  const style = TextStyle(
+    fontSize: 16,
+    height: 1.5,
+    color: Colors.black,
+  );
+  const task = BulletBlock(id: 't', text: '买牛奶', checked: false);
+  await tester.pumpWidget(
+    MaterialApp(
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+          child: child!,
+        );
+      },
+      home: Scaffold(
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MdBlockChrome.buildPrefix(
+              task,
+              style,
+              visible: true,
+            ),
+            Text(
+              '买牛奶',
+              style: style,
+              strutStyle: MdBlockStyles.strutFor(style),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
+void _expectTaskIconAlignedWithBody(WidgetTester tester) {
+  final iconY =
+      tester.getCenter(find.byIcon(Icons.check_box_outline_blank)).dy;
+  final textY = tester.getCenter(find.text('买牛奶')).dy;
+  expect(
+    (iconY - textY).abs(),
+    lessThan(4),
+    reason: 'iconY=$iconY textY=$textY',
+  );
 }

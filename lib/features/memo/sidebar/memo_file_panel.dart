@@ -2,19 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:mind_recall/l10n/app_localizations.dart';
 
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel_logic.dart';
-import 'package:mind_recall/models/memo.dart';
+import 'package:mind_recall/models/memo_folder.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/shared/widgets/highlighted_text.dart';
+
+enum _CreateAction { file, folder }
+
+enum _MemoFileAction { revealInExplorer, pin, rename, move, setColor, delete }
 
 class MemoFilePanel extends StatelessWidget {
   const MemoFilePanel({
     super.key,
-    required this.memos,
+    required this.dirEntries,
+    required this.currentRelativeDir,
     required this.activeMemoId,
     required this.onMemoSelected,
+    required this.onFolderSelected,
+    required this.onGoToParent,
     required this.onCreateMemo,
+    required this.onCreateFolder,
     required this.onRenameMemo,
     required this.onDeleteMemo,
+    required this.onRenameFolder,
+    required this.onDeleteFolder,
+    required this.onMoveMemo,
+    required this.onMoveFolder,
+    required this.onSetFolderColor,
     required this.searchController,
     required this.caseSensitive,
     required this.onCaseSensitiveChanged,
@@ -22,7 +35,9 @@ class MemoFilePanel extends StatelessWidget {
     required this.searchResults,
     required this.onSearchResultSelected,
     this.pinnedMemoIds = const [],
+    this.pinnedFolderIds = const [],
     this.onTogglePinMemo,
+    this.onTogglePinFolder,
     this.showRevealInExplorer = false,
     this.onRevealInExplorer,
     this.isSaving = false,
@@ -32,12 +47,21 @@ class MemoFilePanel extends StatelessWidget {
     this.onAfterSystemOverlay,
   });
 
-  final List<Memo> memos;
+  final List<MemoDirEntry> dirEntries;
+  final String currentRelativeDir;
   final String? activeMemoId;
   final ValueChanged<String> onMemoSelected;
+  final ValueChanged<String> onFolderSelected;
+  final VoidCallback onGoToParent;
   final VoidCallback onCreateMemo;
+  final VoidCallback onCreateFolder;
   final ValueChanged<String> onRenameMemo;
   final ValueChanged<String> onDeleteMemo;
+  final ValueChanged<String> onRenameFolder;
+  final ValueChanged<String> onDeleteFolder;
+  final ValueChanged<String> onMoveMemo;
+  final ValueChanged<String> onMoveFolder;
+  final ValueChanged<String> onSetFolderColor;
   final TextEditingController searchController;
   final bool caseSensitive;
   final ValueChanged<bool> onCaseSensitiveChanged;
@@ -45,7 +69,9 @@ class MemoFilePanel extends StatelessWidget {
   final List<MemoSearchResult> searchResults;
   final ValueChanged<MemoSearchResult> onSearchResultSelected;
   final List<String> pinnedMemoIds;
+  final List<String> pinnedFolderIds;
   final ValueChanged<String>? onTogglePinMemo;
+  final ValueChanged<String>? onTogglePinFolder;
   final bool showRevealInExplorer;
   final ValueChanged<String>? onRevealInExplorer;
   final bool isSaving;
@@ -55,6 +81,7 @@ class MemoFilePanel extends StatelessWidget {
   final VoidCallback? onAfterSystemOverlay;
 
   static const _tilePadding = EdgeInsets.symmetric(horizontal: 12, vertical: 4);
+  static const _folderColorBarWidth = 8.0;
 
   @override
   Widget build(BuildContext context) {
@@ -76,9 +103,30 @@ class MemoFilePanel extends StatelessWidget {
                   ),
                 ),
               ),
-              IconButton(
+              PopupMenuButton<_CreateAction>(
                 tooltip: l10n.newMemo,
-                onPressed: isSaving ? null : onCreateMemo,
+                enabled: !isSaving,
+                onOpened: onBeforeSystemOverlay,
+                onCanceled: onAfterSystemOverlay,
+                onSelected: (action) {
+                  onAfterSystemOverlay?.call();
+                  switch (action) {
+                    case _CreateAction.file:
+                      onCreateMemo();
+                    case _CreateAction.folder:
+                      onCreateFolder();
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: _CreateAction.file,
+                    child: Text(l10n.newFile),
+                  ),
+                  PopupMenuItem(
+                    value: _CreateAction.folder,
+                    child: Text(l10n.newFolder),
+                  ),
+                ],
                 icon: const Icon(Icons.add),
               ),
               if (onCollapseSidebar != null)
@@ -132,6 +180,25 @@ class MemoFilePanel extends StatelessWidget {
             ),
           ),
         ),
+        if (memoFilePanelShowsParentButton(
+          isSearchActive: isSearchActive,
+          query: searchController.text,
+          currentRelativeDir: currentRelativeDir,
+        ))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onGoToParent,
+                icon: const Icon(Icons.arrow_upward, size: 18),
+                label: Text(l10n.goToParentDirectory),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ),
         if (memoFilePanelShowsSearchResults(
           isSearchActive: isSearchActive,
           query: searchController.text,
@@ -242,7 +309,7 @@ class MemoFilePanel extends StatelessWidget {
   Widget _buildMemoList(BuildContext context, AppLocalizations l10n) {
     final theme = Theme.of(context);
 
-    if (memos.isEmpty) {
+    if (dirEntries.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -259,26 +326,63 @@ class MemoFilePanel extends StatelessWidget {
 
     return ListView.builder(
       primary: false,
-      itemCount: memos.length,
+      itemCount: dirEntries.length,
       itemBuilder: (context, index) {
-        final memo = memos[index];
-        final isActive = memo.id == activeMemoId;
+        final entry = dirEntries[index];
+        final isFolder = entry.isFolder;
+        final isActive = memoListItemIsHighlighted(
+          isFolder: isFolder,
+          entryId: entry.id,
+          activeMemoId: activeMemoId,
+        );
+        final pinned = isFolder
+            ? pinnedFolderIds.contains(entry.id)
+            : pinnedMemoIds.contains(entry.id);
+        final title = isFolder
+            ? entry.folder!.displayName
+            : entry.memo!.displayTitle(l10n.untitled);
+        final subtitle = _formatUpdatedAt(
+          memoDirEntryListTime(entry),
+          l10n,
+        );
+        final barColor = isFolder
+            ? _colorFromFolderHex(entry.folder!.colorHex)
+            : null;
 
         return Builder(
           builder: (itemContext) => _MemoListItem(
-            key: ValueKey(memo.id),
+            key: ValueKey('${isFolder ? 'folder' : 'file'}-${entry.id}'),
             selected: isActive,
-            pinned: pinnedMemoIds.contains(memo.id),
-            icon: isActive ? Icons.description : Icons.description_outlined,
+            pinned: pinned,
+            accentBarColor: barColor,
+            icon: isFolder
+                ? Icons.folder_outlined
+                : (isActive ? Icons.description : Icons.description_outlined),
             title: Text(
-              memo.displayTitle(l10n.untitled),
+              title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text(_formatUpdatedAt(memo.updatedAt, l10n)),
-            onTap: () => onMemoSelected(memo.id),
-            onLongPress: () =>
-                _showMemoActionMenu(itemContext, l10n, theme, memo.id),
+            subtitle: subtitle.isEmpty
+                ? null
+                : Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            onTap: () {
+              if (isFolder) {
+                onFolderSelected(entry.id);
+              } else {
+                onMemoSelected(entry.id);
+              }
+            },
+            onLongPress: () => _showEntryActionMenu(
+              itemContext,
+              l10n,
+              theme,
+              entry,
+            ),
             trailing: PopupMenuButton<_MemoFileAction>(
               tooltip: l10n.moreActions,
               padding: EdgeInsets.zero,
@@ -287,9 +391,10 @@ class MemoFilePanel extends StatelessWidget {
               onCanceled: onAfterSystemOverlay,
               onSelected: (action) {
                 onAfterSystemOverlay?.call();
-                _handleMemoFileAction(action, memo.id);
+                _handleEntryAction(action, entry);
               },
-              itemBuilder: (context) => _memoFileMenuItems(l10n, theme, memo.id),
+              itemBuilder: (context) =>
+                  _entryMenuItems(l10n, theme, entry),
             ),
           ),
         );
@@ -297,27 +402,52 @@ class MemoFilePanel extends StatelessWidget {
     );
   }
 
-  void _handleMemoFileAction(_MemoFileAction action, String memoId) {
+  void _handleEntryAction(_MemoFileAction action, MemoDirEntry entry) {
+    if (entry.isFolder) {
+      switch (action) {
+        case _MemoFileAction.pin:
+          onTogglePinFolder?.call(entry.id);
+        case _MemoFileAction.rename:
+          onRenameFolder(entry.id);
+        case _MemoFileAction.move:
+          onMoveFolder(entry.id);
+        case _MemoFileAction.setColor:
+          onSetFolderColor(entry.id);
+        case _MemoFileAction.delete:
+          onDeleteFolder(entry.id);
+        case _MemoFileAction.revealInExplorer:
+          break;
+      }
+      return;
+    }
     switch (action) {
       case _MemoFileAction.revealInExplorer:
-        onRevealInExplorer?.call(memoId);
+        onRevealInExplorer?.call(entry.id);
       case _MemoFileAction.pin:
-        onTogglePinMemo?.call(memoId);
+        onTogglePinMemo?.call(entry.id);
       case _MemoFileAction.rename:
-        onRenameMemo(memoId);
+        onRenameMemo(entry.id);
+      case _MemoFileAction.move:
+        onMoveMemo(entry.id);
+      case _MemoFileAction.setColor:
+        break;
       case _MemoFileAction.delete:
-        onDeleteMemo(memoId);
+        onDeleteMemo(entry.id);
     }
   }
 
-  List<PopupMenuEntry<_MemoFileAction>> _memoFileMenuItems(
+  List<PopupMenuEntry<_MemoFileAction>> _entryMenuItems(
     AppLocalizations l10n,
     ThemeData theme,
-    String memoId,
+    MemoDirEntry entry,
   ) {
-    final pinned = pinnedMemoIds.contains(memoId);
+    final isFolder = entry.isFolder;
+    final pinned = isFolder
+        ? pinnedFolderIds.contains(entry.id)
+        : pinnedMemoIds.contains(entry.id);
+    final canPin = isFolder ? onTogglePinFolder != null : onTogglePinMemo != null;
     return [
-      if (onTogglePinMemo != null)
+      if (canPin)
         PopupMenuItem(
           value: _MemoFileAction.pin,
           child: Row(
@@ -328,7 +458,7 @@ class MemoFilePanel extends StatelessWidget {
             ],
           ),
         ),
-      if (showRevealInExplorer)
+      if (!isFolder && showRevealInExplorer)
         PopupMenuItem(
           value: _MemoFileAction.revealInExplorer,
           child: Row(
@@ -350,6 +480,27 @@ class MemoFilePanel extends StatelessWidget {
         ),
       ),
       PopupMenuItem(
+        value: _MemoFileAction.move,
+        child: Row(
+          children: [
+            const Icon(Icons.drive_file_move_outline),
+            const SizedBox(width: 12),
+            Text(l10n.moveTo),
+          ],
+        ),
+      ),
+      if (isFolder)
+        PopupMenuItem(
+          value: _MemoFileAction.setColor,
+          child: Row(
+            children: [
+              const Icon(Icons.palette_outlined),
+              const SizedBox(width: 12),
+              Text(l10n.setFolderColor),
+            ],
+          ),
+        ),
+      PopupMenuItem(
         value: _MemoFileAction.delete,
         child: Row(
           children: [
@@ -368,11 +519,11 @@ class MemoFilePanel extends StatelessWidget {
     ];
   }
 
-  Future<void> _showMemoActionMenu(
+  Future<void> _showEntryActionMenu(
     BuildContext context,
     AppLocalizations l10n,
     ThemeData theme,
-    String memoId,
+    MemoDirEntry entry,
   ) async {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) {
@@ -388,11 +539,11 @@ class MemoFilePanel extends StatelessWidget {
     final action = await showMenu<_MemoFileAction>(
       context: context,
       position: rect,
-      items: _memoFileMenuItems(l10n, theme, memoId),
+      items: _entryMenuItems(l10n, theme, entry),
     );
     onAfterSystemOverlay?.call();
     if (action != null) {
-      _handleMemoFileAction(action, memoId);
+      _handleEntryAction(action, entry);
     }
   }
 
@@ -418,6 +569,14 @@ class MemoFilePanel extends StatelessWidget {
   }
 }
 
+Color? _colorFromFolderHex(String? hex) {
+  final parsed = MemoFolder.parseColorHex(hex);
+  if (parsed == null) {
+    return null;
+  }
+  return Color(0xFF000000 | int.parse(parsed.substring(1), radix: 16));
+}
+
 class _MemoListItem extends StatelessWidget {
   const _MemoListItem({
     super.key,
@@ -425,7 +584,8 @@ class _MemoListItem extends StatelessWidget {
     required this.pinned,
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
+    this.accentBarColor,
     required this.onTap,
     this.onLongPress,
     this.trailing,
@@ -435,7 +595,10 @@ class _MemoListItem extends StatelessWidget {
   final bool pinned;
   final IconData icon;
   final Widget title;
-  final Widget subtitle;
+  /// 第二行时间；空则不占位，避免图标相对标题垂直居中错位。
+  final Widget? subtitle;
+  /// 文件夹自定义色条；null 不占位。
+  final Color? accentBarColor;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final Widget? trailing;
@@ -454,6 +617,14 @@ class _MemoListItem extends StatelessWidget {
         onLongPress: onLongPress,
         child: Stack(
           children: [
+            if (accentBarColor != null)
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: MemoFilePanel._folderColorBarWidth,
+                child: ColoredBox(color: accentBarColor!),
+              ),
             Padding(
               padding: MemoFilePanel._tilePadding,
               child: Row(
@@ -478,13 +649,15 @@ class _MemoListItem extends StatelessWidget {
                           style: theme.textTheme.bodyLarge,
                           child: title,
                         ),
-                        const SizedBox(height: 2),
-                        DefaultTextStyle.merge(
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 2),
+                          DefaultTextStyle.merge(
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            child: subtitle!,
                           ),
-                          child: subtitle,
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -530,5 +703,3 @@ class _PinCornerBadgePainter extends CustomPainter {
   bool shouldRepaint(covariant _PinCornerBadgePainter oldDelegate) =>
       oldDelegate.color != color;
 }
-
-enum _MemoFileAction { revealInExplorer, pin, rename, delete }

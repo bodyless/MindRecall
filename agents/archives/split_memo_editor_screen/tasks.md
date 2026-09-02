@@ -1,12 +1,4 @@
-## 目标
-
-把 `memo_editor_screen.dart` 里低风险私有 Widget 与中风险工作区/编辑 IME 拆出，壳层只保留三模式切换与焦点/抽屉协调。
-
-## 整体方案
-
-先原样搬家 Dialog、贴键盘工具栏、共用 `ImeMetricsObserver`；再抽 `MemoWorkspaceController` 接管列表/保存/搜索/备份回收站；最后抽 `EditImeCoordinator` 复用已有 settle 决策。不拆 `_buildEditorContent`、`_suspendEditorFocus` 与 `LiveMarkdownEditor` 内部 IME。
-
-## 任务
+## 步骤 1：拆分编辑器壳
 
 - [x] 新建 `lib/features/memo/editor/widgets/rename_memo_dialog.dart`，将 `memo_editor_screen.dart` 的 `_RenameDialog` / `_RenameDialogState` 改为公开 `RenameMemoDialog`（构造参数仍为 `initialTitle`）；
 - [x] 修改 `memo_editor_screen.dart` 的 `_showRenameDialog`，改为 `showDialog` 构建 `RenameMemoDialog`，并删除文件末尾原 `_RenameDialog` 类；

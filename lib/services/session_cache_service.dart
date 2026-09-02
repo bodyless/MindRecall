@@ -11,6 +11,8 @@ class SessionCache {
   const SessionCache({
     this.lastOpenedMemoId,
     this.pinnedMemoIds = const [],
+    this.pinnedFolderIds = const [],
+    this.currentRelativeDir = '',
   });
 
   /// 上次打开的文档 id。
@@ -19,26 +21,42 @@ class SessionCache {
   /// 置顶文档 id，按置顶先后：**后置顶的在前**。
   final List<String> pinnedMemoIds;
 
+  /// 置顶文件夹 id，按置顶先后：**后置顶的在前**。
+  final List<String> pinnedFolderIds;
+
+  /// 侧栏当前目录，相对 `documents/`；空串为根。
+  final String currentRelativeDir;
+
   factory SessionCache.defaults() => const SessionCache();
 
   factory SessionCache.fromJson(Map<String, dynamic> json) {
     final pinned = json['pinnedMemoIds'];
+    final pinnedFolders = json['pinnedFolderIds'];
+    final current = json['currentRelativeDir'];
     return SessionCache(
       lastOpenedMemoId: json['lastOpenedMemoId'] as String?,
       pinnedMemoIds: pinned is List
           ? pinned.whereType<String>().toList(growable: false)
           : const [],
+      pinnedFolderIds: pinnedFolders is List
+          ? pinnedFolders.whereType<String>().toList(growable: false)
+          : const [],
+      currentRelativeDir: current is String ? current : '',
     );
   }
 
   Map<String, dynamic> toJson() => {
         'lastOpenedMemoId': lastOpenedMemoId,
         'pinnedMemoIds': pinnedMemoIds,
+        'pinnedFolderIds': pinnedFolderIds,
+        'currentRelativeDir': currentRelativeDir,
       };
 
   SessionCache copyWith({
     String? lastOpenedMemoId,
     List<String>? pinnedMemoIds,
+    List<String>? pinnedFolderIds,
+    String? currentRelativeDir,
     bool clearLastOpenedMemoId = false,
   }) {
     return SessionCache(
@@ -46,6 +64,8 @@ class SessionCache {
           ? null
           : (lastOpenedMemoId ?? this.lastOpenedMemoId),
       pinnedMemoIds: pinnedMemoIds ?? this.pinnedMemoIds,
+      pinnedFolderIds: pinnedFolderIds ?? this.pinnedFolderIds,
+      currentRelativeDir: currentRelativeDir ?? this.currentRelativeDir,
     );
   }
 }
@@ -112,6 +132,22 @@ class SessionCacheService {
   }
 
   bool isPinned(String memoId) => _cache.pinnedMemoIds.contains(memoId);
+
+  Future<SessionCache> toggleFolderPin(String folderId) async {
+    final current = List<String>.from(_cache.pinnedFolderIds);
+    if (current.contains(folderId)) {
+      current.remove(folderId);
+    } else {
+      current.insert(0, folderId);
+    }
+    final next = _cache.copyWith(pinnedFolderIds: current);
+    await save(next);
+    return next;
+  }
+
+  Future<void> updateCurrentRelativeDir(String relativeDir) {
+    return save(_cache.copyWith(currentRelativeDir: relativeDir));
+  }
 
   Future<File> _cacheFile() async {
     final dir = await getApplicationSupportDirectory();

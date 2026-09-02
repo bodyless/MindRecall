@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel_logic.dart';
+import 'package:mind_recall/models/memo.dart';
+import 'package:mind_recall/models/memo_folder.dart';
 
 void main() {
   group('memoFilePanelShowsSearchResults', () {
@@ -31,6 +33,240 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('memoFilePanelShowsParentButton', () {
+    test('root hides', () {
+      expect(
+        memoFilePanelShowsParentButton(
+          isSearchActive: false,
+          query: '',
+          currentRelativeDir: '',
+        ),
+        isFalse,
+      );
+    });
+
+    test('nested dir shows', () {
+      expect(
+        memoFilePanelShowsParentButton(
+          isSearchActive: false,
+          query: '',
+          currentRelativeDir: 'abc',
+        ),
+        isTrue,
+      );
+    });
+
+    test('search hides even in nested dir', () {
+      expect(
+        memoFilePanelShowsParentButton(
+          isSearchActive: true,
+          query: 'foo',
+          currentRelativeDir: 'abc',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('memoListItemIsHighlighted', () {
+    test('file highlights when active', () {
+      expect(
+        memoListItemIsHighlighted(
+          isFolder: false,
+          entryId: 'a',
+          activeMemoId: 'a',
+        ),
+        isTrue,
+      );
+    });
+
+    test('folder never highlights', () {
+      expect(
+        memoListItemIsHighlighted(
+          isFolder: true,
+          entryId: 'a',
+          activeMemoId: 'a',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('memoDirEntryListTime', () {
+    test('folder uses updatedAt', () {
+      final folder = MemoDirEntry.folder(
+        MemoFolder(
+          id: 'f',
+          directoryPath: 'f',
+          displayName: 'F',
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 8, 1),
+        ),
+      );
+      expect(memoDirEntryListTime(folder), DateTime(2026, 8, 1));
+    });
+
+    test('file uses memo updatedAt', () {
+      final file = MemoDirEntry.file(
+        Memo(
+          id: 'm',
+          title: 'm',
+          content: '',
+          filePath: 'm.md',
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 7, 1),
+        ),
+      );
+      expect(memoDirEntryListTime(file), DateTime(2026, 7, 1));
+    });
+  });
+
+  group('move picker logic', () {
+    MemoFolderTreeNode node({
+      required String id,
+      required DateTime createdAt,
+      List<MemoFolderTreeNode> children = const [],
+    }) {
+      return MemoFolderTreeNode(
+        folderId: id,
+        relativeDir: id.contains('/') ? id : id,
+        displayName: id,
+        createdAt: createdAt,
+        children: children,
+      );
+    }
+
+    test('excludeFolderFromMoveTree 去掉自身与子孙，保留根', () {
+      final workChild = MemoFolderTreeNode(
+        folderId: 'child',
+        relativeDir: 'work/child',
+        displayName: 'child',
+        createdAt: DateTime(2026, 2, 1),
+      );
+      final work = MemoFolderTreeNode(
+        folderId: 'work',
+        relativeDir: 'work',
+        displayName: 'work',
+        createdAt: DateTime(2026, 1, 1),
+        children: [workChild],
+      );
+      final life = MemoFolderTreeNode(
+        folderId: 'life',
+        relativeDir: 'life',
+        displayName: 'life',
+        createdAt: DateTime(2026, 3, 1),
+      );
+      final root = MemoFolderTreeNode(
+        relativeDir: '',
+        displayName: '',
+        children: [work, life],
+      );
+      final filtered = excludeFolderFromMoveTree(
+        root,
+        movingFolderRelativeDir: 'work',
+      );
+      expect(filtered.relativeDir, isEmpty);
+      expect(filtered.children.map((n) => n.folderId), ['life']);
+    });
+
+    test('moveDestinationConfirmEnabled：源父禁用，其它与根启用', () {
+      expect(
+        moveDestinationConfirmEnabled(
+          sourceParentRelativeDir: 'work',
+          selectedRelativeDir: 'work',
+        ),
+        isFalse,
+      );
+      expect(
+        moveDestinationConfirmEnabled(
+          sourceParentRelativeDir: 'work',
+          selectedRelativeDir: 'life',
+        ),
+        isTrue,
+      );
+      expect(
+        moveDestinationConfirmEnabled(
+          sourceParentRelativeDir: 'work',
+          selectedRelativeDir: '',
+        ),
+        isTrue,
+      );
+      expect(
+        moveDestinationConfirmEnabled(
+          sourceParentRelativeDir: '',
+          selectedRelativeDir: '',
+        ),
+        isFalse,
+      );
+    });
+
+    test('sortMemoFolderTree 每层置顶靠前，其余 createdAt 新→旧', () {
+      final old = node(id: 'old', createdAt: DateTime(2026, 1, 1));
+      final newer = node(id: 'new', createdAt: DateTime(2026, 6, 1));
+      final pinned = node(id: 'pin', createdAt: DateTime(2020, 1, 1));
+      final nestedOld = node(id: 'n-old', createdAt: DateTime(2026, 1, 1));
+      final nestedNew = node(
+        id: 'n-new',
+        createdAt: DateTime(2026, 8, 1),
+      );
+      final parent = MemoFolderTreeNode(
+        folderId: 'p',
+        relativeDir: 'p',
+        displayName: 'p',
+        createdAt: DateTime(2026, 1, 1),
+        children: [nestedOld, nestedNew],
+      );
+      final root = MemoFolderTreeNode(
+        relativeDir: '',
+        displayName: '',
+        children: [old, parent, newer, pinned],
+      );
+      final sorted = sortMemoFolderTree(
+        root,
+        pinnedFolderIds: ['pin'],
+      );
+      expect(sorted.children.map((n) => n.folderId), [
+        'pin',
+        'new',
+        'p',
+        'old',
+      ]);
+      expect(sorted.children[2].children.map((n) => n.folderId), [
+        'n-new',
+        'n-old',
+      ]);
+    });
+  });
+
+  group('sortMemoDirEntries', () {
+    test('pinned folder then pinned file', () {
+      final folder = MemoDirEntry.folder(
+        MemoFolder(
+          id: 'f',
+          directoryPath: 'f',
+          displayName: 'F',
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      final file = MemoDirEntry.file(
+        Memo(
+          id: 'm',
+          title: 'm',
+          content: '',
+          filePath: 'm.md',
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      );
+      final sorted = sortMemoDirEntries(
+        entries: [file, folder],
+        pinnedFolderIds: ['f'],
+        pinnedMemoIds: ['m'],
+      );
+      expect(sorted.map((e) => e.id), ['f', 'm']);
     });
   });
 

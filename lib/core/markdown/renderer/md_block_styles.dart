@@ -1,41 +1,71 @@
 import 'package:flutter/material.dart';
 
 import '../ast/md_block.dart';
+
 abstract final class MdBlockStyles {
-  /// 不同块级单元之间的垂直间距（与 [MdBlocksPreview] 一致）。
+  /// 不同块级单元之间的垂直间距（预览与实时共用）。
   static const blockGap = 8.0;
 
-  static const slotPadding = EdgeInsets.symmetric(vertical: 2, horizontal: 2);
+  /// 连续列表项之间的垂直间距（比 [blockGap] 更紧凑）。
+  static const listItemGap = 4.0;
+
+  /// 预览 / 实时正文区顶部内边距。实时勿再用更大的 top，否则会比预览更疏。
+  static const editorBodyTopPadding = 8.0;
+
+  /// 预览 / 实时正文区左右内边距。
+  static const editorBodyHorizontalPadding = 16.0;
+
+  /// 槽位水平内边距。垂直为 0，避免实时比预览每块多出 4px。
+  static const slotPadding = EdgeInsets.symmetric(horizontal: 2);
 
   /// 图片块在槽位内的上下留白（[MdBlockRenderer] 与 × 按钮定位共用）。
   static const imageContentVerticalPadding = 8.0;
 
-  /// 块槽位内边距；同一段落内换行（[ParagraphBlock.continuesWithNext]）不加垂直 padding。
-  static EdgeInsets slotPaddingFor(MdBlock block, {MdBlock? previous}) {
+  /// 无序 / 有序 / 勾选均视为列表项，连续项之间用 [listItemGap]。
+  static bool isListItem(MdBlock block) =>
+      block is BulletBlock || block is OrderedBlock;
+
+  /// 段内换行：当前与下一块都是段落，且标记了 [ParagraphBlock.continuesWithNext]。
+  ///
+  /// 正文 Enter 后立刻改成列表时，标记可能仍为 true；必须看下一块类型，
+  /// 不能只信这个 flag，否则正文↔列表会被当成段内行距。
+  static bool paragraphFlowsInto(MdBlock block, MdBlock? next) {
+    return block is ParagraphBlock &&
+        block.continuesWithNext &&
+        (next == null || next is ParagraphBlock);
+  }
+
+  /// 块槽位内边距；同一段落内换行不加垂直 padding（当前垂直本就为 0）。
+  static EdgeInsets slotPaddingFor(
+    MdBlock block, {
+    MdBlock? previous,
+    MdBlock? next,
+  }) {
     final flowsFromPrevious =
-        previous is ParagraphBlock && previous.continuesWithNext;
-    final flowsToNext =
-        block is ParagraphBlock && block.continuesWithNext;
+        previous != null && paragraphFlowsInto(previous, block);
+    final flowsToNext = paragraphFlowsInto(block, next);
     if (flowsFromPrevious || flowsToNext) {
       return const EdgeInsets.symmetric(horizontal: 2);
     }
     return slotPadding;
   }
 
-  /// 当前块底部的外边距：段落内换行（[ParagraphBlock.continuesWithNext]）为 0。
-  static double bottomSpacingFor(MdBlock block) {
-    if (block is ParagraphBlock && block.continuesWithNext) {
+  /// 当前块底部的外边距。
+  ///
+  /// 段内换行（且下一块仍是段落）为 0；连续列表项为 [listItemGap]；其余为 [blockGap]。
+  static double bottomSpacingFor(MdBlock block, {MdBlock? next}) {
+    if (paragraphFlowsInto(block, next)) {
       return 0;
+    }
+    if (next != null && isListItem(block) && isListItem(next)) {
+      return listItemGap;
     }
     return blockGap;
   }
 
   static StrutStyle strutFor(TextStyle? style) {
     final resolved = style ?? const TextStyle();
-    return StrutStyle.fromTextStyle(
-      resolved,
-      forceStrutHeight: true,
-    );
+    return StrutStyle.fromTextStyle(resolved, forceStrutHeight: true);
   }
 
   /// H3 相对正文的字号倍率；Material 默认 titleMedium 与 bodyLarge 同为 16，
@@ -144,12 +174,14 @@ abstract final class MdBlockStyles {
   static TextStyle? headingStyle(ThemeData theme, int level) {
     final bodySize = theme.textTheme.bodyLarge?.fontSize ?? 16;
     return switch (level) {
-      1 => theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+      1 => theme.textTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.bold,
+      ),
       2 => theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
       3 => theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.bold,
-          fontSize: bodySize * _h3SizeScale,
-        ),
+        fontWeight: FontWeight.bold,
+        fontSize: bodySize * _h3SizeScale,
+      ),
       _ => theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
     };
   }

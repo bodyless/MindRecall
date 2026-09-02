@@ -2,9 +2,10 @@
 name: mode-explore
 description: >-
   Read-only exploration mode for the codebase. Inspect files and talk with the
-  user; never create, edit, or delete files. Use when the user names
-  mode-explore, asks to explore first, or wants a read-only look before any
-  implementation.
+  user; never create, edit, or delete files. At the end, only suggest
+  mode-patch (root cause already stated, no architectural risk) or
+  mode-propose (the default). Use when the user names mode-explore, asks to
+  explore first, or wants a read-only look before any implementation.
 disable-model-invocation: true
 ---
 
@@ -33,21 +34,37 @@ disable-model-invocation: true
 - 派发可能改文件的子代理（`generalPurpose`、`shell`、`best-of-n-runner` 等）
 - MCP / 浏览器操作用于改本地文件
 
+## 出口（只建议）
+
+边读边归类。默认建议标准流程 **mode-propose**。仅当合取前提都满足才建议 **mode-patch**：
+
+- 本次交付已写出根因句（哪条路径、哪个函数/状态、为什么错或可优化）
+- 按该根因修/优化无架构隐患
+
+命中任一条则否决 patch，一律建议 propose：根因写不清或有竞争假说；未拍板的对外行为分叉；新模块/改边界/新进程外入口/多到达路径；跨层生命周期（壳层 Focus、Input Session、IME、存储格式）；推翻 `fixed_list` 或 README 已有 invariant。
+
+「优化」同样走这扇门。吃不准算有隐患。不能 `SwitchMode`，不能代执行。用户 `@mode-patch` / `@mode-propose` 才算退出本模式。
+
 ## 用户要求修改时
 
-若用户尝试修改时，提示用户使用 mode-propose 技能。
-
 1. **不要改文件**（本模式仍禁止任何增删改）
-2. 用对话给出：已读结论、建议改动要点、涉及路径（见下方「交接」）
-3. 明确提示：当前是 `mode-explore`；要把探索结果写成可落实方案，请使用 **mode-propose**（`@mode-propose`）
+2. 用对话给出对应交接（见下方「交付」）
+3. 明确提示：当前是 `mode-explore`；按出口规则建议 **mode-patch**（`@mode-patch`）或 **mode-propose**（`@mode-propose`），并写清归类依据
 
 ## 交付
 
-用中文直接回答。先给结论，再补证据（路径、符号、行为）。标出不确定点。可给下一步建议，但不要执行任何写入。
+用中文直接回答。先给结论，再补证据（路径、符号、行为）。标出不确定点。可建议下一跳，但不要执行任何写入。不要写 `schemes.md` / `tasks.md`。产品分叉只列出，不要在 explore 里选定。
 
-面向下一模式时，只交**另一会话可独立消费**的事实，不要写 `schemes.md` / `tasks.md`（那是 **mode-propose** 的合同）：
+**→ mode-propose（默认）**：另一会话可独立消费的事实：
 
 - 现有同类模式的路径（同类通道、同类入口、同类初始化）
 - 调用链：从已有入口到将改的函数
-- 不确定点与**行为分叉**：读不到的符号、多条到达路径、两条以上都合理的做法——标出来交给 propose 问用户，不要在 explore 里擅自选定
+- 不确定点与**行为分叉**：读不到的符号、多条到达路径、两条以上都合理的做法
+
+**→ mode-patch**：对话里的短方案（不落盘），须含：
+
+- 现象
+- 根因句
+- 要改的文件与函数
+- 回归点（测什么；Bug 则双写 `agents/fixed_list.md`）
 
