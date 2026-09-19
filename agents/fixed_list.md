@@ -8,6 +8,14 @@
 
 ## 目录
 
+- 2026-09-19 — 实时 H1/H2/H3 互切字号滞后
+- 2026-09-13 — 代码块多行失焦只留第一行
+- 2026-09-13 — 空代码块无深色框
+- 2026-09-13 — 文末代码块下方无法续写
+- 2026-09-13 — 中间插入正文行距变大
+- 2026-09-12 — 标题与删除线共存渲染且光标错位
+- 2026-09-12 — 代码块语言框点文字无效且列表跳顶
+- 2026-09-06 — 实时聚焦有 IME 时无法拖列表
 - 2026-09-02 — 打开含网络图文档 HandshakeException / ANR
 - 2026-09-02 — 正文转列表行距错；实时比预览疏
 - 2026-08-30 — 冷启动侧栏未应用 session 置顶
@@ -77,6 +85,54 @@
 ---
 
 ## 清单
+
+### 2026-09-19 — 实时 H1/H2/H3 互切字号滞后
+- **现象**：实时模式工具栏在 H1 / H2 / H3 之间切换时，标题字号有时要停约一秒才变
+- **根因**：`_applyLineMarkdownTransform` 的 `layoutChanged` 只看 `runtimeType`；三级标题都是 `HeadingBlock`，Live 不 `setState`，列表槽 `headingStyle(level)` 要等到自动保存等其它重建才刷新
+- **修复要点**：同属 `HeadingBlock` 但 `level` 不同时必须 `setState`。**禁止**把换级算进 `layoutChanged`（会 `_markLayoutTransition` + `_stabilizeInputFocus(force: true)`，误走 IME 布局过渡）。有序编号刷新已是「`setState` 但不算 layoutChanged」
+- **相关**：`live_markdown_editor.dart`、`test/live_heading_level_test.dart`
+
+### 2026-09-13 — 代码块多行失焦只留第一行
+- **现象**：实时模式代码块输入多行，光标点到块外或切模式后只剩第一行
+- **根因**：`commitPlainToBlock` 用 `!supportsInlineFormatting` 当单行，把 `CodeBlock` 的 plain `split('\n').first`
+- **修复要点**：只对 `isSingleLineBlock` 截第一行；代码块提交必须保留完整换行。失焦 / `_activateBlock` / `flushToParent` 都走此函数，禁止另写截行通道
+- **相关**：`live_session_ops.dart`、`test/live_session_ops_test.dart`
+
+### 2026-09-13 — 空代码块无深色框
+- **现象**：实时转成空代码块时语言框出现，但没有深色代码底，打字后才出现
+- **根因**：`_emptyBlockChrome` 的 `CodeBlock` 只有 padding，没有 `codeBlockDecoration`；实时 Overlay 是 chromeless，底色只能靠列表槽
+- **修复要点**：空代码块 chrome 必须与有内容分支同样全宽 Container + `codeBlockDecoration`。禁止只在 Overlay 再画一套底
+- **相关**：`md_block_renderer.dart`、`test/live_image_delete_and_empty_chrome_test.dart`
+
+### 2026-09-13 — 文末代码块下方无法续写
+- **现象**：代码块是最后一块时，写完无法继续写正文；Enter 只在块内换行
+- **根因**：空文档 `SliverFillRemaining` 仅 `isEmptyDocumentBody`；代码块不拆块，文末没有可点段落
+- **修复要点**：最后一块为 `CodeBlock` 时用独立 key 的文末 fill；点击先 `_commitActiveBlock` 再 `ensureEditableBlockAfterAtomic` 聚焦空段落。禁止改代码块内 Enter 拆块，禁止与空文档 fill 混用 key
+- **相关**：`live_markdown_editor.dart`、`live_session_ops.dart`、`test/live_empty_body_hint_test.dart`
+
+### 2026-09-13 — 中间插入正文行距变大
+- **现象**：已有多行正文时在中间 Enter 再写，新行与后面原行间距偏大；切模式再回来才正常
+- **根因**：`splitMultilineBlockAt` 只给左半段打 `continuesWithNext`，新块默认 false，`bottomSpacingFor` 走 `blockGap`
+- **修复要点**：新块须继承被拆块原有的 `continuesWithNext`。禁止把 `syncParagraphFlowFlags` 改成给所有相邻段落 SET flag
+- **相关**：`live_session_ops.dart`、`test/live_session_ops_test.dart`
+
+### 2026-09-12 — 标题与删除线共存渲染且光标错位
+- **现象**：`## ~~测试~~` 同时呈标题样式和删除线；实时模式点进标题内部折叠光标隐藏或偏移，全选看起来正常
+- **根因**：标题不在 `supportsInlineFormatting`，Overlay 透明 `TextField` 含 `~~`；列表层 `MdInlineText` 却解析删除线，段落 plain 与 controller 不一致，`rendererParagraphMatchesCaretPlain` 失败就清掉自定义光标
+- **修复要点**：标题展示/编辑必须 `headingVisualPlain`（剥行内标记的纯文本 + 标题样式），**禁止**对 `HeadingBlock` 走 `MdInlineText`。转标题时 `applyHeadingLineMarkdown` / 编辑模式 `applyHeading` 同样剥标记。折叠光标按渲染层测量，字符串须与 Overlay plain 一致
+- **相关**：`md_block_renderer.dart`、`block_ops.dart`、`live_line_markdown.dart`、`test/live_block_ops_test.dart`、`test/md_block_renderer_test.dart`
+
+### 2026-09-12 — 代码块语言框点文字无效且列表跳顶
+- **现象**：实时模式代码块右上角语言框（如 `python`）点在文字上无效，只能点空白；一点空白文档立刻滚到顶部，代码块滚出视野
+- **根因**：语言框挂在列表槽，活动块 Overlay 透明 `TextField` 盖住文字命中；点到空白才落到槽内语言框。正文失焦同一帧语言框尚未获焦，Overlay `IgnorePointer`、IME spacer 被清掉，列表跳顶；语言框默认 `scrollPadding` 还会 `ensureVisible`
+- **修复要点**：语言框必须叠在 Overlay 透明 `TextField` **之上**，不要放列表槽。正文/语言框任一获焦（含交接那一帧的 `_imeSessionFocused`）都视为仍在输入，禁止立刻 `IgnorePointer` 或拆 spacer。语言框 `scrollPadding: EdgeInsets.zero`。父屏失焦宽限须等本帧结束再看语言框焦点，禁止抢回正文 Focus
+- **相关**：`live_markdown_editor.dart`、`memo_editor_screen.dart`、`test/live_code_language_field_test.dart`
+
+### 2026-09-06 — 实时聚焦有 IME 时无法拖列表
+- **现象**：实时模式文本铺满且光标已在某块内时，无法在文字上上下拖列表，只能点到空白才滚；编辑模式无此问题。IME 开着时同样拖不动。
+- **根因**：活动块 Overlay 与 `CustomScrollView` 是 `Stack` 兄弟。聚焦时透明 `TextField` 独食命中；`NeverScrollableScrollPhysics` 只禁止块内自滚，不把垂直拖交给外层列表。
+- **修复要点**：聚焦 Overlay 块高命中区用垂直拖转发 `ScrollPosition.drag`，不 `unfocus`、不清 `_activeBlockId`。外层**禁止** `onTap`/`onPan` 抢走单击。失焦仍 `IgnorePointer`。**禁止**把 Overlay 塞进列表槽当拖动方案。
+- **相关**：`live_markdown_editor.dart`、`test/live_overlay_scroll_test.dart`
 
 ### 2026-09-02 — 打开含网络图文档 HandshakeException / ANR
 - **现象**：打开文档后 debug 崩并断连，控制台 `HandshakeException: Connection terminated during handshake`；MIUI 上伴随 ANR / signal 3

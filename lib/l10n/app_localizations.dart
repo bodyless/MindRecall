@@ -902,6 +902,12 @@ abstract class AppLocalizations {
   /// **'斜体'**
   String get toolbarItalic;
 
+  /// No description provided for @toolbarStrikethrough.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除线'**
+  String get toolbarStrikethrough;
+
   /// No description provided for @toolbarCode.
   ///
   /// In zh, this message translates to:
@@ -932,6 +938,12 @@ abstract class AppLocalizations {
   /// **'引用'**
   String get toolbarQuote;
 
+  /// No description provided for @toolbarCodeBlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'代码块'**
+  String get toolbarCodeBlock;
+
   /// No description provided for @toolbarThematicBreak.
   ///
   /// In zh, this message translates to:
@@ -949,6 +961,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'插入图片'**
   String get toolbarInsertImage;
+
+  /// No description provided for @codeBlockLanguageHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'语言'**
+  String get codeBlockLanguageHint;
 }
 
 class _AppLocalizationsDelegate

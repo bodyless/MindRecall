@@ -84,6 +84,43 @@ void main() {
       expect(find.text('点击此处输入文本'), findsOneWidget);
       expect(find.text('…'), findsNothing);
     });
+
+    testWidgets('空代码块有深色底且无省略号占位', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: const Scaffold(
+            body: Column(
+              children: [
+                MdBlockRenderer(
+                  block: CodeBlock(id: 'c1', code: ''),
+                ),
+                MdBlockRenderer(
+                  block: CodeBlock(id: 'c2', code: 'x'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('…'), findsNothing);
+      final decorated = tester
+          .widgetList<Container>(find.byType(Container))
+          .where((container) {
+            final decoration = container.decoration;
+            return decoration is BoxDecoration &&
+                decoration.color != null &&
+                decoration.borderRadius != null;
+          })
+          .toList();
+      expect(decorated.length, greaterThanOrEqualTo(2));
+      expect(
+        (decorated[0].decoration as BoxDecoration).color,
+        (decorated[1].decoration as BoxDecoration).color,
+      );
+    });
   });
 
   group('MdBlockRenderer network image', () {

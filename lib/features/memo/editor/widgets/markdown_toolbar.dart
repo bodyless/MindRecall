@@ -75,6 +75,17 @@ class MarkdownToolbar extends StatelessWidget {
               }),
             ),
             _ToolbarButton(
+              icon: Icons.format_strikethrough,
+              tooltip: l10n.toolbarStrikethrough,
+              onPressed: () => _apply(() {
+                MarkdownEditorHelper.wrapSelection(
+                  controller,
+                  left: '~~',
+                  right: '~~',
+                );
+              }),
+            ),
+            _ToolbarButton(
               icon: Icons.code,
               tooltip: l10n.toolbarCode,
               onPressed: () => _apply(() {
@@ -122,6 +133,13 @@ class MarkdownToolbar extends StatelessWidget {
                   prefix: '> ',
                   replaceExisting: RegExp(r'^>\s*'),
                 );
+              }),
+            ),
+            _ToolbarButton(
+              icon: Icons.terminal,
+              tooltip: l10n.toolbarCodeBlock,
+              onPressed: () => _apply(() {
+                MarkdownEditorHelper.insertCodeBlockFence(controller);
               }),
             ),
             _ToolbarButton(
@@ -174,7 +192,9 @@ class LiveMarkdownToolbar extends StatelessWidget {
     this.onPrepareInlineAction,
     this.onBold,
     this.onItalic,
+    this.onStrikethrough,
     this.onInlineCode,
+    this.onCodeBlock,
     this.onInsertImage,
     this.onInsertLink,
   });
@@ -191,7 +211,9 @@ class LiveMarkdownToolbar extends StatelessWidget {
   final VoidCallback? onPrepareInlineAction;
   final VoidCallback? onBold;
   final VoidCallback? onItalic;
+  final VoidCallback? onStrikethrough;
   final VoidCallback? onInlineCode;
+  final VoidCallback? onCodeBlock;
   final VoidCallback? onInsertImage;
   final VoidCallback? onInsertLink;
 
@@ -229,7 +251,16 @@ class LiveMarkdownToolbar extends StatelessWidget {
               onPrepare: onPrepareToolbarAction,
               onPressed: () => _apply(() => onHeading(3)),
             ),
-            if (onBold != null || onItalic != null || onInlineCode != null) ...[
+            _ToolbarButton(
+              icon: Icons.notes,
+              tooltip: l10n.toolbarParagraph,
+              onPrepare: onPrepareToolbarAction,
+              onPressed: () => _apply(onParagraph),
+            ),
+            if (onBold != null ||
+                onItalic != null ||
+                onStrikethrough != null ||
+                onInlineCode != null) ...[
               const _ToolbarDivider(),
               if (onBold != null)
                 _ToolbarButton(
@@ -250,6 +281,16 @@ class LiveMarkdownToolbar extends StatelessWidget {
                     onPrepareInlineAction?.call();
                   },
                   onPressed: () => _apply(onItalic!),
+                ),
+              if (onStrikethrough != null)
+                _ToolbarButton(
+                  icon: Icons.format_strikethrough,
+                  tooltip: l10n.toolbarStrikethrough,
+                  onPrepare: () {
+                    onPrepareToolbarAction?.call();
+                    onPrepareInlineAction?.call();
+                  },
+                  onPressed: () => _apply(onStrikethrough!),
                 ),
               if (onInlineCode != null)
                 _ToolbarButton(
@@ -287,17 +328,18 @@ class LiveMarkdownToolbar extends StatelessWidget {
               onPrepare: onPrepareToolbarAction,
               onPressed: () => _apply(onQuote),
             ),
+            if (onCodeBlock != null)
+              _ToolbarButton(
+                icon: Icons.terminal,
+                tooltip: l10n.toolbarCodeBlock,
+                onPrepare: onPrepareToolbarAction,
+                onPressed: () => _apply(onCodeBlock!),
+              ),
             _ToolbarButton(
               icon: Icons.horizontal_rule,
               tooltip: l10n.toolbarThematicBreak,
               onPrepare: onPrepareToolbarAction,
               onPressed: () => _apply(onInsertThematicBreak),
-            ),
-            _ToolbarButton(
-              icon: Icons.notes,
-              tooltip: l10n.toolbarParagraph,
-              onPrepare: onPrepareToolbarAction,
-              onPressed: () => _apply(onParagraph),
             ),
             if (onInsertImage != null || onInsertLink != null) ...[
               const _ToolbarDivider(),

@@ -51,7 +51,30 @@ void main() {
       expect(lines.first, 'Cursor Live F');
       expect(lines, contains('sel 2..5 len=3'));
       expect(lines, contains('blk 2/4 H2 id=md-b2'));
+      expect(
+        lines,
+        contains('ov hit=0 view=0 imeF=0 edF=0 langF=0 sameTap=0'),
+      );
       expect(lines, contains('ctx «ab|cde»'));
+    });
+
+    test('formats live overlay hit fields', () {
+      final lines = formatCursorDebugHudLines(
+        const CursorDebugSnapshot(
+          mode: 'Live',
+          focused: true,
+          overlayHitTestActive: true,
+          overlayInView: true,
+          imeSessionFocused: true,
+          editorFocused: true,
+          languageFocused: false,
+          sameBlockTapDiscarded: true,
+        ),
+      );
+      expect(
+        lines,
+        contains('ov hit=1 view=1 imeF=1 edF=1 langF=0 sameTap=1'),
+      );
     });
   });
 

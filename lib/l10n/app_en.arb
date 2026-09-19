@@ -179,12 +179,15 @@
   "toolbarH3": "Heading 3",
   "toolbarBold": "Bold",
   "toolbarItalic": "Italic",
+  "toolbarStrikethrough": "Strikethrough",
   "toolbarCode": "Inline code",
   "toolbarBulletList": "Bullet list",
   "toolbarOrderedList": "Numbered list",
   "toolbarTaskList": "Checklist",
   "toolbarQuote": "Quote",
+  "toolbarCodeBlock": "Code block",
   "toolbarThematicBreak": "Divider",
   "toolbarParagraph": "Paragraph",
-  "toolbarInsertImage": "Insert image"
+  "toolbarInsertImage": "Insert image",
+  "codeBlockLanguageHint": "Language"
 }

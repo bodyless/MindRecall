@@ -250,12 +250,15 @@
   "toolbarH3": "三级标题",
   "toolbarBold": "粗体",
   "toolbarItalic": "斜体",
+  "toolbarStrikethrough": "删除线",
   "toolbarCode": "行内代码",
   "toolbarBulletList": "无序列表",
   "toolbarOrderedList": "有序列表",
   "toolbarTaskList": "勾选列表",
   "toolbarQuote": "引用",
+  "toolbarCodeBlock": "代码块",
   "toolbarThematicBreak": "分割线",
   "toolbarParagraph": "正文",
-  "toolbarInsertImage": "插入图片"
+  "toolbarInsertImage": "插入图片",
+  "codeBlockLanguageHint": "语言"
 }

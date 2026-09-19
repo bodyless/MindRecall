@@ -113,6 +113,14 @@ class _InlineSpanBuilder {
           const TextStyle(fontStyle: FontStyle.italic),
         );
         return _styledSpan(children, italicStyle);
+      case StrikeInline(:final children):
+        final strikeStyle = current.merge(
+          TextStyle(
+            decoration: TextDecoration.lineThrough,
+            decorationColor: current.color,
+          ),
+        );
+        return _styledSpan(children, strikeStyle);
       case CodeInline(:final text):
         return TextSpan(
           text: text,

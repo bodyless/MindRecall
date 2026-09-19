@@ -103,6 +103,34 @@ void main() {
       // 序列化统一用星号表示。
       expect(serializeInlineMarkdown(nodes), '***both***');
     });
+
+    test('parses strikethrough with double tildes', () {
+      final nodes = parseInlineMarkdown('Hello ~~world~~');
+      expect(nodes.length, 2);
+      expect(nodes[1], isA<StrikeInline>());
+      expect((nodes[1] as StrikeInline).plainText, 'world');
+      expect(serializeInlineMarkdown(nodes), 'Hello ~~world~~');
+    });
+
+    test('single tilde is plain text', () {
+      final nodes = parseInlineMarkdown('approx ~n or ~');
+      expect(nodes.single, isA<TextInline>());
+      expect((nodes.single as TextInline).text, 'approx ~n or ~');
+    });
+
+    test('parses bold-outside and strike-outside strikethrough', () {
+      final boldOuter = parseInlineMarkdown('**~~x~~**');
+      expect(boldOuter.single, isA<BoldInline>());
+      expect((boldOuter.single as BoldInline).children.single, isA<StrikeInline>());
+
+      final strikeOuter = parseInlineMarkdown('~~**x**~~');
+      expect(strikeOuter.single, isA<StrikeInline>());
+      expect(
+        (strikeOuter.single as StrikeInline).children.single,
+        isA<BoldInline>(),
+      );
+      expect(serializeInlineMarkdown(strikeOuter), '~~**x**~~');
+    });
   });
 
   group('applyInlineStyle', () {
@@ -127,12 +155,34 @@ void main() {
       expect(serializeInlineMarkdown(updated), 'Use `print` here');
     });
 
+    test('wraps selected range in strikethrough', () {
+      const input = 'Hello world';
+      final nodes = parseInlineMarkdown(input);
+      final updated = applyInlineStyle(nodes, 6, 11, InlineStyle.strikethrough);
+      expect(serializeInlineMarkdown(updated), 'Hello ~~world~~');
+    });
+
     test('applies bold and italic to selection', () {
       const input = 'Hello world';
       var nodes = parseInlineMarkdown(input);
       nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.bold);
       nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.italic);
       expect(serializeInlineMarkdown(nodes), 'Hello ***world***');
+    });
+
+    test('applies strikethrough and serializes bold then italic then strike', () {
+      const input = 'Hello world';
+      var nodes = parseInlineMarkdown(input);
+      nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.bold);
+      nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.italic);
+      nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.strikethrough);
+      expect(serializeInlineMarkdown(nodes), 'Hello ***~~world~~***');
+    });
+
+    test('code style clears strikethrough', () {
+      var nodes = parseInlineMarkdown('Hello ~~world~~');
+      nodes = applyInlineStyle(nodes, 6, 11, InlineStyle.code);
+      expect(serializeInlineMarkdown(nodes), 'Hello `world`');
     });
 
     test('handles selection beyond plain text length safely', () {
@@ -275,6 +325,28 @@ void main() {
 
       expect(styledSpan, isNotNull);
       expect(styledSpan!.text ?? styledSpan.toPlainText(), contains('world'));
+    });
+
+    testWidgets('renders strikethrough with lineThrough decoration', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: MdInlineText(markdown: 'Hello ~~world~~'),
+          ),
+        ),
+      );
+
+      final richText = tester.widget<RichText>(find.byType(RichText));
+      final root = richText.text as TextSpan;
+      final strikeSpan = findSpanWithStyle(
+        root,
+        (style) => style?.decoration == TextDecoration.lineThrough,
+      );
+
+      expect(strikeSpan, isNotNull);
+      expect(strikeSpan!.text ?? strikeSpan.toPlainText(), contains('world'));
     });
   });
 }

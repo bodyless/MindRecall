@@ -457,6 +457,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolbarItalic => '斜体';
 
   @override
+  String get toolbarStrikethrough => '删除线';
+
+  @override
   String get toolbarCode => '行内代码';
 
   @override
@@ -472,6 +475,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolbarQuote => '引用';
 
   @override
+  String get toolbarCodeBlock => '代码块';
+
+  @override
   String get toolbarThematicBreak => '分割线';
 
   @override
@@ -479,4 +485,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get toolbarInsertImage => '插入图片';
+
+  @override
+  String get codeBlockLanguageHint => '语言';
 }

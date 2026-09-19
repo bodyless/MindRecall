@@ -1,4 +1,4 @@
-/// 行内 Markdown AST（粗体、斜体、代码、纯文本）。
+/// 行内 Markdown AST（粗体、斜体、删除线、代码、纯文本）。
 sealed class MdInline {
   const MdInline();
 
@@ -41,6 +41,18 @@ final class ItalicInline extends MdInline {
 
   @override
   String toMarkdown() => '*${children.map((c) => c.toMarkdown()).join()}*';
+}
+
+final class StrikeInline extends MdInline {
+  const StrikeInline(this.children);
+
+  final List<MdInline> children;
+
+  @override
+  String get plainText => children.map((child) => child.plainText).join();
+
+  @override
+  String toMarkdown() => '~~${children.map((c) => c.toMarkdown()).join()}~~';
 }
 
 final class CodeInline extends MdInline {
@@ -97,7 +109,7 @@ String linkDisplayLabel({
   return label;
 }
 
-enum InlineStyle { bold, italic, code }
+enum InlineStyle { bold, italic, strikethrough, code }
 
 /// 将行内 Markdown 解析为 [MdInline] 节点列表。
 List<MdInline> parseInlineMarkdown(String input) {
@@ -106,9 +118,9 @@ List<MdInline> parseInlineMarkdown(String input) {
   }
 
   final nodes = <MdInline>[];
-  // 链接须优先；三星/三下划线须在 ** / * 之前匹配。
+  // 链接须优先；三星/三下划线须在 ** / * 之前匹配；`~~` 须在单 `*` 之前。
   final pattern = RegExp(
-    r'(\[[^\]]+\]\([^)]+\)|\*\*\*.+?\*\*\*|___.+?___|\*\*.+?\*\*|__.+?__|\*.+?\*|_.+?_|`.+?`)',
+    r'(\[[^\]]+\]\([^)]+\)|\*\*\*.+?\*\*\*|___.+?___|\*\*.+?\*\*|__.+?__|~~.+?~~|\*.+?\*|_.+?_|`.+?`)',
   );
   var start = 0;
 
@@ -128,6 +140,9 @@ List<MdInline> parseInlineMarkdown(String input) {
       final markerLen = 2;
       final inner = token.substring(markerLen, token.length - markerLen);
       nodes.add(BoldInline(parseInlineMarkdown(inner)));
+    } else if (_isWrapped(token, '~~')) {
+      final inner = token.substring(2, token.length - 2);
+      nodes.add(StrikeInline(parseInlineMarkdown(inner)));
     } else if (token.startsWith('`') &&
         token.endsWith('`') &&
         token.length >= 2) {
@@ -161,6 +176,14 @@ String serializeInlineMarkdown(List<MdInline> nodes) {
 
 String plainTextFromInlines(List<MdInline> nodes) {
   return nodes.map((node) => node.plainText).join();
+}
+
+/// 标题不参与行内格式：展示/编辑只用剥掉 `~~` / `**` 等标记后的纯文本。
+String headingVisualPlain(String text) {
+  if (text.isEmpty) {
+    return '';
+  }
+  return plainTextFromInlines(parseInlineMarkdown(text));
 }
 
 /// 按 plain 文本偏移拆分行内 markdown。
@@ -245,6 +268,12 @@ String plainTextFromInlines(List<MdInline> nodes) {
       return (
         before.isEmpty ? null : ItalicInline(before),
         after.isEmpty ? null : ItalicInline(after),
+      );
+    case StrikeInline(:final children):
+      final (before, after) = splitInlineNodesAt(children, offset);
+      return (
+        before.isEmpty ? null : StrikeInline(before),
+        after.isEmpty ? null : StrikeInline(after),
       );
     case CodeInline(:final text):
       return (
@@ -352,7 +381,7 @@ String mergeInlineMarkdown(String leftMarkdown, String rightMarkdown) {
   ]);
 }
 
-/// 在 plain 文本选区上应用或切换行内样式（B/I/代码）。
+/// 在 plain 文本选区上应用或切换行内样式（B/I/删除线/代码）。
 List<MdInline> applyInlineStyle(
   List<MdInline> nodes,
   int selectionStart,
@@ -416,7 +445,8 @@ List<MdInline> applyInlineStyle(
       if (style == InlineStyle.code) {
         targetStyles
           ..remove(InlineStyle.bold)
-          ..remove(InlineStyle.italic);
+          ..remove(InlineStyle.italic)
+          ..remove(InlineStyle.strikethrough);
       }
       if (targetStyles.contains(style)) {
         targetStyles.remove(style);
@@ -473,6 +503,8 @@ List<_StyledSegment> _flattenSegments(List<MdInline> nodes) {
           walk(children, {...styles, InlineStyle.bold});
         case ItalicInline(:final children):
           walk(children, {...styles, InlineStyle.italic});
+        case StrikeInline(:final children):
+          walk(children, {...styles, InlineStyle.strikethrough});
         case CodeInline(:final text):
           if (text.isNotEmpty) {
             result.add(
@@ -541,6 +573,9 @@ MdInline _wrapStyledText(String text, Set<InlineStyle> styles) {
     return CodeInline(text);
   }
   MdInline node = TextInline(text);
+  if (styles.contains(InlineStyle.strikethrough)) {
+    node = StrikeInline([node]);
+  }
   if (styles.contains(InlineStyle.italic)) {
     node = ItalicInline([node]);
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ast/md_block.dart';
+import '../ast/md_inline.dart';
 import 'markdown_image_resolver.dart';
 import 'md_block_chrome.dart';
 import 'md_block_styles.dart';
@@ -45,11 +46,10 @@ class MdBlockRenderer extends StatelessWidget {
     }
 
     return switch (block) {
-      HeadingBlock(:final level, :final text) => MdInlineText(
-        markdown: text.isEmpty ? ' ' : text,
-        style: MdBlockStyles.headingStyle(theme, level),
-        onLinkTap: onLinkTap,
-        resolveLinkLabel: resolveLinkLabel,
+      HeadingBlock(:final level, :final text) => _headingPlainText(
+        theme,
+        level: level,
+        text: text,
       ),
       BulletBlock(:final text) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,6 +130,24 @@ class MdBlockRenderer extends StatelessWidget {
     };
   }
 
+  /// 标题不渲染行内格式，避免与透明 Overlay 字宽不一致导致光标隐藏/偏移。
+  Widget _headingPlainText(
+    ThemeData theme, {
+    required int level,
+    required String text,
+  }) {
+    final style = MdBlockStyles.headingStyle(theme, level);
+    final plain = headingVisualPlain(text);
+    if (plain.isEmpty) {
+      return MdBlockChrome.emptyBodyPlaceholderText(style);
+    }
+    return Text(
+      plain,
+      style: style,
+      strutStyle: MdBlockStyles.strutFor(style),
+    );
+  }
+
   Widget _emptyBlockChrome(ThemeData theme, MdBlock block) {
     // 空块用透明空格保留 RenderParagraph，供实时模式测量光标；不显示「…」。
     final bodyPlaceholder = MdBlockChrome.emptyBodyPlaceholderText(
@@ -160,9 +178,13 @@ class MdBlockRenderer extends StatelessWidget {
           child: bodyPlaceholder,
         ),
       ),
-      CodeBlock() => Padding(
+      CodeBlock() => Container(
+        width: double.infinity,
         padding: MdBlockChrome.codeBlockPadding(),
-        child: bodyPlaceholder,
+        decoration: MdBlockStyles.codeBlockDecoration(theme),
+        child: MdBlockChrome.emptyBodyPlaceholderText(
+          theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+        ),
       ),
       _ => _emptyParagraphBody(theme, bodyPlaceholder),
     };

@@ -462,6 +462,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolbarItalic => 'Italic';
 
   @override
+  String get toolbarStrikethrough => 'Strikethrough';
+
+  @override
   String get toolbarCode => 'Inline code';
 
   @override
@@ -477,6 +480,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolbarQuote => 'Quote';
 
   @override
+  String get toolbarCodeBlock => 'Code block';
+
+  @override
   String get toolbarThematicBreak => 'Divider';
 
   @override
@@ -484,4 +490,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolbarInsertImage => 'Insert image';
+
+  @override
+  String get codeBlockLanguageHint => 'Language';
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../ast/md_block.dart';
+import '../ast/md_inline.dart';
 import '../block_ops.dart';
 import '../live_block_tap_ops.dart';
 import '../renderer/markdown_image_resolver.dart';
@@ -467,12 +468,11 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
 
   Widget _inlinePreviewForBlock(MdBlock block, ThemeData theme) {
     return switch (block) {
-      HeadingBlock(:final level, :final text) => MdInlineText(
-          markdown: text,
-          style: MdBlockStyles.headingStyle(theme, level),
-          onLinkTap: onLinkTap,
-          resolveLinkLabel: resolveLinkLabel,
-        ),
+      HeadingBlock(:final level, :final text) => _headingPlainPreview(
+        theme,
+        level,
+        text,
+      ),
       BulletBlock(:final text) ||
       OrderedBlock(:final text) ||
       ParagraphBlock(:final text) =>
@@ -495,6 +495,16 @@ class _MdBlockEditorFieldBody extends StatelessWidget {
           resolveLinkLabel: resolveLinkLabel,
         ),
     };
+  }
+
+  Widget _headingPlainPreview(ThemeData theme, int level, String text) {
+    final style = MdBlockStyles.headingStyle(theme, level);
+    final plain = headingVisualPlain(text);
+    return Text(
+      plain.isEmpty ? ' ' : plain,
+      style: style,
+      strutStyle: MdBlockStyles.strutFor(style),
+    );
   }
 }
 

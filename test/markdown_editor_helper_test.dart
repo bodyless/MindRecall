@@ -28,6 +28,15 @@ void main() {
       expect(controller.text, '# 第一行\n第二行');
     });
 
+    test('applyHeading strips strikethrough markers on the line', () {
+      final controller = TextEditingController(text: '~~测试asdasdasdasd~~');
+      controller.selection = const TextSelection.collapsed(offset: 4);
+
+      MarkdownEditorHelper.applyHeading(controller, 2);
+
+      expect(controller.text, '## 测试asdasdasdasd');
+    });
+
     test('applyHeading replaces existing heading level', () {
       final controller = TextEditingController(text: '## 标题');
       controller.selection = const TextSelection(baseOffset: 0, extentOffset: 5);
@@ -100,6 +109,66 @@ void main() {
       MarkdownEditorHelper.insertThematicBreak(controller);
 
       expect(controller.text, 'a\n---\nb');
+    });
+
+    test('wrapSelection wraps highlighted text with strikethrough markers', () {
+      final controller = TextEditingController(text: 'hello world');
+      controller.selection = const TextSelection(
+        baseOffset: 6,
+        extentOffset: 11,
+      );
+
+      MarkdownEditorHelper.wrapSelection(
+        controller,
+        left: '~~',
+        right: '~~',
+      );
+
+      expect(controller.text, 'hello ~~world~~');
+      expect(controller.selection.start, 8);
+      expect(controller.selection.end, 13);
+    });
+
+    test('insertCodeBlockFence wraps selection as fence body', () {
+      final controller = TextEditingController(text: 'hello world');
+      controller.selection = const TextSelection(
+        baseOffset: 6,
+        extentOffset: 11,
+      );
+
+      MarkdownEditorHelper.insertCodeBlockFence(controller);
+
+      expect(controller.text, 'hello ```\nworld\n```');
+      expect(controller.selection.baseOffset, 'hello ```\nworld'.length);
+    });
+
+    test('insertCodeBlockFence splits abc|def into empty fence', () {
+      final controller = TextEditingController(text: 'abcdef');
+      controller.selection = const TextSelection.collapsed(offset: 3);
+
+      MarkdownEditorHelper.insertCodeBlockFence(controller);
+
+      expect(controller.text, 'abc\n```\n\n```\ndef');
+      expect(controller.selection.baseOffset, 'abc\n```\n'.length);
+    });
+
+    test('insertCodeBlockFence at eof adds trailing blank line', () {
+      final controller = TextEditingController(text: 'abc');
+      controller.selection = const TextSelection.collapsed(offset: 3);
+
+      MarkdownEditorHelper.insertCodeBlockFence(controller);
+
+      expect(controller.text, 'abc\n```\n\n```\n\n');
+    });
+
+    test('insertCodeBlockFence on empty document has no leading newline', () {
+      final controller = TextEditingController(text: '');
+      controller.selection = const TextSelection.collapsed(offset: 0);
+
+      MarkdownEditorHelper.insertCodeBlockFence(controller);
+
+      expect(controller.text, '```\n\n```\n\n');
+      expect(controller.selection.baseOffset, '```\n'.length);
     });
   });
 }

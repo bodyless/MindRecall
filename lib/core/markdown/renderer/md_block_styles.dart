@@ -109,6 +109,33 @@ abstract final class MdBlockStyles {
   static double atomicDeleteButtonRight() =>
       slotPadding.right + atomicDeleteButtonInset;
 
+  /// 代码块语言框宽度。
+  static const codeLanguageFieldWidth = 96.0;
+
+  /// 代码块语言框字号。
+  static const codeLanguageFieldFontSize = 12.0;
+
+  /// 语言框相对槽右上角的内缩（对标 ×）。
+  static const codeLanguageFieldInset = atomicDeleteButtonInset;
+
+  /// 语言框垂直内边距。
+  static const codeLanguageFieldVerticalPadding = 4.0;
+
+  /// 语言框水平内边距。
+  static const codeLanguageFieldHorizontalPadding = 6.0;
+
+  static double codeLanguageFieldRight() =>
+      slotPadding.right + codeLanguageFieldInset;
+
+  /// 将语言框放进代码块 Overlay [Stack] 右上角（须叠在透明 TextField 之上）。
+  static Widget positionCodeLanguageField({required Widget field}) {
+    return Positioned(
+      top: codeLanguageFieldInset,
+      right: codeLanguageFieldRight(),
+      child: field,
+    );
+  }
+
   /// 将删除按钮放进原子块 [Stack]；分割线垂直居中，图片右上内缩。
   static Widget positionAtomicDeleteButton({
     required MdBlock block,

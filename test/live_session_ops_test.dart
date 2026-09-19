@@ -137,6 +137,26 @@ void main() {
       expect((result.blocks[0] as ParagraphBlock).text, '**ab**');
       expect((result.blocks[1] as ParagraphBlock).text, 'cd');
     });
+
+    test('中间插入继承原块 continuesWithNext', () {
+      final blocks = [
+        const ParagraphBlock(id: 'a', text: '行1', continuesWithNext: true),
+        const ParagraphBlock(id: 'b', text: '行2', continuesWithNext: true),
+        const ParagraphBlock(id: 'c', text: '行3'),
+      ];
+      final result = splitMultilineBlockAt(
+        blocks: blocks,
+        index: 0,
+        resolvedMarkdownBeforeEdit: '行1',
+        plainCursor: 2,
+        idGenerator: ids,
+      );
+      expect(result.blocks, hasLength(4));
+      expect((result.blocks[0] as ParagraphBlock).continuesWithNext, isTrue);
+      expect((result.blocks[1] as ParagraphBlock).text, isEmpty);
+      expect((result.blocks[1] as ParagraphBlock).continuesWithNext, isTrue);
+      expect((result.blocks[2] as ParagraphBlock).text, '行2');
+    });
   });
 
   group('insertBlockBelowSingleLine', () {
@@ -224,6 +244,43 @@ void main() {
     test('resolvedInlineMarkdownForEdit 保持未改动的行内语法', () {
       final block = ParagraphBlock(id: 'p', text: '**hi**');
       expect(resolvedInlineMarkdownForEdit(block, 'hi'), '**hi**');
+    });
+
+    test('代码块提交保留多行', () {
+      const block = CodeBlock(id: 'c', code: 'a');
+      final updated = commitPlainToBlock(block, 'a\nb\nc');
+      expect(updated, isA<CodeBlock>());
+      expect((updated as CodeBlock).code, 'a\nb\nc');
+    });
+
+    test('标题提交只留第一行', () {
+      const block = HeadingBlock(id: 'h', level: 1, text: 'old');
+      final updated = commitPlainToBlock(block, 'a\nb');
+      expect(updated, isA<HeadingBlock>());
+      expect((updated as HeadingBlock).text, 'a');
+    });
+  });
+
+  group('liveShowsTrailingAfterCodeFill', () {
+    test('最后一块代码为 true；段落与空文档为 false', () {
+      expect(
+        liveShowsTrailingAfterCodeFill([
+          const CodeBlock(id: 'c', code: 'print(1)'),
+        ]),
+        isTrue,
+      );
+      expect(
+        liveShowsTrailingAfterCodeFill([
+          const ParagraphBlock(id: 'p', text: 'hello'),
+        ]),
+        isFalse,
+      );
+      expect(
+        liveShowsTrailingAfterCodeFill([
+          const ParagraphBlock(id: 'p', text: ''),
+        ]),
+        isFalse,
+      );
     });
   });
 

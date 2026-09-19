@@ -169,6 +169,12 @@ MdBlock? applyBlockTrigger(MdBlock block, String lineText) {
       lineMarkdown: '- $lineText',
     );
   }
+  if (block is ParagraphBlock && lineText.startsWith('```')) {
+    return reparseBlockFromLineMarkdown(
+      block,
+      lineMarkdown: lineText,
+    );
+  }
   final matchesTrigger = MdSyntaxPatterns.headingLine.hasMatch(lineText) ||
       MdSyntaxPatterns.bulletTrigger.hasMatch(lineText) ||
       MdSyntaxPatterns.orderedLine.hasMatch(lineText) ||

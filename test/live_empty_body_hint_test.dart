@@ -110,4 +110,122 @@ void main() {
     await tester.pump();
     expect(focus.hasFocus, isTrue);
   });
+
+  testWidgets('文末代码块下方空白可点出空段落并聚焦', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    final controller = TextEditingController(text: '```\nprint(1);\n```');
+    addTearDown(controller.dispose);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 400,
+            child: LiveMarkdownEditor(
+              controller: controller,
+              focusNode: focus,
+              scrollController: scroll,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(LiveMarkdownEditor.emptyBodyFillKey), findsNothing);
+    expect(
+      find.byKey(LiveMarkdownEditor.trailingAfterCodeFillKey),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(LiveMarkdownEditor.trailingAfterCodeFillKey));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 850));
+
+    expect(focus.hasFocus, isTrue);
+    expect(controller.text, '```\nprint(1);\n```\n');
+    expect(
+      find.byKey(LiveMarkdownEditor.trailingAfterCodeFillKey),
+      findsNothing,
+    );
+  });
+
+  testWidgets('已有正文时不出现代码块文末填空', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    final controller = TextEditingController(text: 'hello');
+    addTearDown(controller.dispose);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 400,
+            child: LiveMarkdownEditor(
+              controller: controller,
+              focusNode: focus,
+              scrollController: scroll,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(LiveMarkdownEditor.trailingAfterCodeFillKey),
+      findsNothing,
+    );
+  });
+
+  testWidgets('空文档只有 emptyBodyFillKey', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    final controller = TextEditingController(text: '');
+    addTearDown(controller.dispose);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 400,
+            child: LiveMarkdownEditor(
+              controller: controller,
+              focusNode: focus,
+              scrollController: scroll,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(LiveMarkdownEditor.emptyBodyFillKey), findsOneWidget);
+    expect(
+      find.byKey(LiveMarkdownEditor.trailingAfterCodeFillKey),
+      findsNothing,
+    );
+  });
 }

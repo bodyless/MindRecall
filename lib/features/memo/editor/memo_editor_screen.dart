@@ -565,51 +565,74 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       }
       return;
     }
-    if (_imeUserDismissUnfocus) {
-      return;
-    }
-    if (_editorFocusSuspended) {
-      return;
-    }
-    if (_liveSession.deferFocusBlur ||
-        (_liveEditorKey.currentState?.layoutTransitionActive ?? false)) {
-      _liveEditorKey.currentState?.restoreFocus();
-      if (!_liveSession.hadFocus) {
-        setState(() => _liveSession.hadFocus = true);
-      }
-      return;
-    }
-    Future.delayed(_liveFocusBlurGrace, () {
+    // 正文失焦可能发生在语言框获焦之前；等本帧结束再决定是否抢回/结束会话。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _viewMode != EditorViewMode.live) {
         return;
       }
-      if (_imeUserDismissUnfocus) {
-        return;
-      }
       if (_liveSession.focusNode.hasFocus) {
-        _liveSession.hadFocus = true;
         return;
       }
-      if (_titleFocusNode.hasFocus) {
+      if (_liveEditorKey.currentState?.isCodeLanguageFieldFocused ?? false) {
+        if (!_liveSession.hadFocus) {
+          setState(() => _liveSession.hadFocus = true);
+        }
         return;
       }
-      // 宽限期后再抢一次；仍无焦点则结束实时输入会话。
       if (_imeUserDismissUnfocus) {
         return;
       }
-      _liveEditorKey.currentState?.restoreFocus();
-      Future.delayed(_liveFocusRestoreWait, () {
+      if (_editorFocusSuspended) {
+        return;
+      }
+      if (_liveSession.deferFocusBlur ||
+          (_liveEditorKey.currentState?.layoutTransitionActive ?? false)) {
+        _liveEditorKey.currentState?.restoreFocus();
+        if (!_liveSession.hadFocus) {
+          setState(() => _liveSession.hadFocus = true);
+        }
+        return;
+      }
+      Future.delayed(_liveFocusBlurGrace, () {
         if (!mounted || _viewMode != EditorViewMode.live) {
+          return;
+        }
+        if (_imeUserDismissUnfocus) {
           return;
         }
         if (_liveSession.focusNode.hasFocus) {
           _liveSession.hadFocus = true;
           return;
         }
-        if (_liveSession.hadFocus) {
-          _clearImeInsets();
-          setState(() => _liveSession.hadFocus = false);
+        if (_liveEditorKey.currentState?.isCodeLanguageFieldFocused ?? false) {
+          _liveSession.hadFocus = true;
+          return;
         }
+        if (_titleFocusNode.hasFocus) {
+          return;
+        }
+        // 宽限期后再抢一次；仍无焦点则结束实时输入会话。
+        if (_imeUserDismissUnfocus) {
+          return;
+        }
+        _liveEditorKey.currentState?.restoreFocus();
+        Future.delayed(_liveFocusRestoreWait, () {
+          if (!mounted || _viewMode != EditorViewMode.live) {
+            return;
+          }
+          if (_liveSession.focusNode.hasFocus) {
+            _liveSession.hadFocus = true;
+            return;
+          }
+          if (_liveEditorKey.currentState?.isCodeLanguageFieldFocused ?? false) {
+            _liveSession.hadFocus = true;
+            return;
+          }
+          if (_liveSession.hadFocus) {
+            _clearImeInsets();
+            setState(() => _liveSession.hadFocus = false);
+          }
+        });
       });
     });
   }
@@ -1055,6 +1078,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   Future<void> _pickAndInsertImage() async {
     final memoId = _activeMemoId;
     if (memoId == null) {
+      return;
+    }
+    if (_viewMode == EditorViewMode.live &&
+        (_liveEditorKey.currentState?.swallowsMarkdownToolbar ?? false)) {
       return;
     }
 
@@ -2022,6 +2049,8 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       debugTimelineSync('Editor.toolbarStabilize', () {
         setState(() {});
       });
+    } else {
+      debugTimelineInstant('Editor.toolbarStabilize.skip');
     }
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
@@ -2046,10 +2075,12 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
         onOrderedList: () => liveState?.applyOrderedList(),
         onTaskList: () => liveState?.applyTaskList(),
         onQuote: () => liveState?.applyQuote(),
+        onCodeBlock: () => liveState?.applyCodeBlock(),
         onInsertThematicBreak: () => liveState?.insertThematicBreak(),
         onParagraph: () => liveState?.applyParagraph(),
         onBold: () => liveState?.applyBold(),
         onItalic: () => liveState?.applyItalic(),
+        onStrikethrough: () => liveState?.applyStrikethrough(),
         onInlineCode: () => liveState?.applyInlineCode(),
         onInsertLink: () => unawaited(_insertMarkdownLink()),
         onInsertImage: _activeMemoId != null

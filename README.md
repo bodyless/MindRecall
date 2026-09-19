@@ -42,15 +42,15 @@
 | 模式 | 组件 | 说明 |
 |------|------|------|
 | **编辑** `edit` | `TextField` + `MarkdownToolbar` | 直接编辑 Markdown 源码；工具栏插入 `#`、`**`、列表等 |
-| **实时** `live` | `LiveMarkdownEditor` + `LiveMarkdownToolbar` | 块级 WYSIWYG；块内隐藏 `#`/`-` 等前缀；支持行内粗体/斜体/代码；列表按 `ListView.builder` 虚拟化滚动 |
+| **实时** `live` | `LiveMarkdownEditor` + `LiveMarkdownToolbar` | 块级 WYSIWYG；块内隐藏 `#`/`-` 等前缀；段落/列表/引用支持行内粗体/斜体/删除线/代码（标题只显示纯文本）；列表按 `ListView.builder` 虚拟化滚动 |
 | **预览** `preview` | `MemoMarkdownPreview` → `MdBlocksPreview` | 只读渲染正文 Markdown（不再额外拼标题）；与实时模式共用渲染栈；切入预览时主动失焦，不立刻弹键盘 |
 
 三种模式共享同一数据源：`MemoEditorScreen` 的 `_titleController` / `_contentController`。
 
 ### Markdown 工具栏
 
-- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）；含无序 / 有序 / 勾选列表、分割线
-- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、无序/有序/勾选列表、引用、分割线、正文）+ 行内 B/I/代码；粗体等需在**有选区**时生效；勾选列表前缀可点击切换 `- [ ]` / `- [x]`（预览只读显示）；分割线与图片同为原子块（无 TextField，点选后 × 删除）
+- **编辑模式**（`MarkdownToolbar`）：基于 `TextEditingController` 选区插入语法（`MarkdownEditorHelper`）；含无序 / 有序 / 勾选列表、分割线、删除线 `~~`、围栏代码块（与行内代码并存）
+- **实时模式**（`LiveMarkdownToolbar`）：块类型切换（H1/H2/H3、正文、无序/有序/勾选列表、引用、代码块、分割线）+ 行内 B/I/删除线/行内代码；H1/H2/H3 互切立即换字号（同属 `HeadingBlock`，须 Live `setState`，勿等自动保存）；粗体等需在**有选区**时生效；勾选列表前缀可点击切换 `- [ ]` / `- [x]`（预览只读显示）；分割线与图片同为原子块（无 TextField，点选后 × 删除）。代码块吞掉 markdown：块内除「正文」外格式按钮无效；活动代码块在正文或语言框有焦点时右上角可改围栏语言；只有「正文」拆围栏退出。代码块提交保留多行（失焦/切模式不截成第一行）；空代码块也有深色框；**最后一块是代码块**时可点文末空白插入并聚焦空段落（块内 Enter 仍不拆块）
 
 ### 搜索
 
@@ -65,7 +65,7 @@
 ### 其他 UX
 
 - 宽屏（≥720px）左侧可折叠文件栏；窄屏 Drawer（左半屏 + 安全区可边缘滑动；仅系统 IME 可见时禁用侧滑；收起键盘后无光标但仍可侧滑）
-- 打开已有文档默认无光标（点一下才有）；同篇开关文件栏恢复刚才的光标；换篇不继承；用户收起输入法后无光标（长段可上下拖）。新建、插入图、系统选区「记录到笔记」仍聚焦正文；搜索跳转只滚到匹配处、不自动出光标
+- 打开已有文档默认无光标（点一下才有）；同篇开关文件栏恢复刚才的光标；换篇不继承；用户收起输入法后无光标。聚焦且 IME 仍开时，在活动块文字上垂直拖即可滚列表，单击一次落光标。新建、插入图、系统选区「记录到笔记」仍聚焦正文；搜索跳转只滚到匹配处、不自动出光标
 - 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`；导入须选合并或覆盖，默认合并：按文件名添加或覆盖同名，空备份不清空本地；覆盖则先清空再写入；回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本（`pubspec.yaml` 的 `大.小.迭代`，不含 buildNumber）
 - **本地会话缓存**（`session_cache.json`，应用 support 目录）：当前打开文档、当前侧栏目录、文件置顶与文件夹置顶；不可随备份迁移
 - 侧栏支持置顶（后置顶靠前，左上角深色角标）；当前层顺序为置顶文件夹 → 置顶文件 → 文件夹（建立时间）→ 文件（最后修改时间降序）
@@ -149,26 +149,26 @@ flowchart TB
 1. **磁盘** ↔ `MemoStorageService` ↔ `_contentController.text`（Markdown 字符串）
 2. `LiveMarkdownEditor` 经 `prepareLiveBlocksFromMarkdown` 解析为 `List<MdBlock> _blocks`（内存 AST）
 3. 活动块：单块 `TextField` 显示**纯文本**（`editableTextForBlock`）；块内 markdown 存在 `ParagraphBlock.text` 等字段
-4. 非活动块 / 预览：`MdBlockRenderer` → `MdInlineText` 渲染
+4. 非活动块 / 预览：`MdBlockRenderer` 渲染（标题用纯文本，其余行内走 `MdInlineText`）
 5. 变更经 `serializeMdBlocks(_blocks)` 写回 `_contentController`（`_syncToParent`）
 6. Enter 拆块 / 单行插入等纯 AST 变更走 `live_session_ops.dart`；State 只负责焦点、Overlay、滚动与 `setState`
 
-**Agent 注意**：实时模式下「显示文本」≠「存储文本」。行内格式（`**bold**`）保存在 block 的 `text` 字段；编辑区显示去掉标记后的 plain text。修改逻辑须用 `applyPlainTextChange` / `splitInlineMarkdown` 等，**不要**用纯文本直接 `copyWithPlainText` 覆盖含行内格式的块。
+**Agent 注意**：实时模式下「显示文本」≠「存储文本」。行内格式（`**bold**`）保存在 block 的 `text` 字段；编辑区显示去掉标记后的 plain text。修改逻辑须用 `applyPlainTextChange` / `splitInlineMarkdown` 等，**不要**用纯文本直接 `copyWithPlainText` 覆盖含行内格式的块。标题不纳入 `supportsInlineFormatting`，渲染/编辑必须用 `headingVisualPlain`，**禁止**对 `HeadingBlock` 走 `MdInlineText` 解析 `~~`/`**`（否则标题与删除线共存，折叠光标会隐藏或偏移）。
 
 **Agent 注意**：实时模式按**块**编辑，不是按 TextField 行。从编辑模式进入时，`expandMultilineParagraphsForLive` 会把含 `\n` 的段落拆成每行一块；否则 H2/列表等块级操作会作用于整段。
 
-**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`。连续段落行之间不加块间距。正文 Enter 后立刻改成列表/标题/分割线时须 `syncParagraphFlowFlags` 清掉已过期的 flow 标记，**禁止**只信 `continuesWithNext` 而不看下一块类型（否则正文↔列表会像段内行距，切模式重解析才恢复）。连续列表项用 `listItemGap`（比 `blockGap` 更紧凑）。实时槽位垂直 padding 为 0、顶边距与预览同为 `editorBodyTopPadding`，避免同样内容在实时里更疏。
+**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`。连续段落行之间不加块间距。正文**中间** Enter 时，新块须继承被拆块原有的 `continuesWithNext`（`splitMultilineBlockAt`），否则与后续行会变成 `blockGap`，切模式重解析才恢复。正文 Enter 后立刻改成列表/标题/分割线时须 `syncParagraphFlowFlags` 清掉已过期的 flow 标记，**禁止**只信 `continuesWithNext` 而不看下一块类型（否则正文↔列表会像段内行距，切模式重解析才恢复）。连续列表项用 `listItemGap`（比 `blockGap` 更紧凑）。实时槽位垂直 padding 为 0、顶边距与预览同为 `editorBodyTopPadding`，避免同样内容在实时里更疏。
 
 **Enter 换行**（实时模式）：
 - **段落块**：`_NewBlockEnterFormatter` 在光标处 `splitBlockAt` → `splitMultilineBlockAt`
 - **标题 / 列表 / 引用**（单行块）：同样走 formatter → `insertBlockBelowSingleLine`；物理键盘另由 `Focus.onKeyEvent` 补 Enter → `_insertEmptyBlockBelow` 在下方插入空段落
-- **代码块**：允许输入原始换行，不拆块
+- **代码块**：允许输入原始换行，不拆块；`commitPlainToBlock` 仅对 `isSingleLineBlock` 截第一行，**禁止**把代码块当单行提交。最后一块为代码块时，文末 `SliverFillRemaining`（`trailingAfterCodeFillKey`）点击后 `ensureEditableBlockAfterAtomic` 插入空段落并聚焦。空代码块列表槽须带 `codeBlockDecoration`（Overlay 仍 chromeless）
 
 **块首删除**（实时模式 Backspace / IME 删除）：光标在当前块第一个字符时，把当前块全文接到**上一文本块**末尾并删除当前块，**保留上一块的块级格式**。上一块为图片/分割线等原子块时删除无效。文档首块仍是取消标题/列表等块级样式。实现为 `mergeCurrentBlockIntoPrevious`；**禁止** `copyBlockInlineMarkdown` 漏写标题/代码导致文本丢失或多出空块。
 
 **有序列表编号**：连续 [OrderedBlock] 为一段，从 `1.` 起。工具栏把某项改成正文/无序/标题等会切断该段，后段必须 `renumberOrderedBlocksAround` 从 `1.` 重计。**禁止**只在「新块是有序」时重编号。
 
-**Agent 注意**：实时编辑器使用**固定 Overlay 单例** `MdBlockEditorField`（`live-active-editor` key）+ `LayerLink`/`CompositedTransformFollower` 跟随活动块槽位；块列表为 `CustomScrollView` + `SliverList` 虚拟化。活动块仅占位布局，**不可**按 block.id 重建 TextField，否则 Android 会失焦。标题↔列表切换时 chromeless 层始终用 `Row + Expanded` 包裹输入框，避免结构重挂载失焦。换块后若短暂失焦，父屏会调用 `restoreFocus()`。激活非活动块时须用 `onTapDown` 全局坐标经 `plainOffsetAtGlobalTap` 落点，**禁止**写死 `offset: text.length`。空文档用 `SliverFillRemaining` 承接正文框空白点击（Overlay 仅一行高，点不到空白）；hint 叠在透明空格下方，勿再渲染「…」。
+**Agent 注意**：实时编辑器使用**固定 Overlay 单例** `MdBlockEditorField`（`live-active-editor` key）+ `LayerLink`/`CompositedTransformFollower` 跟随活动块槽位；块列表为 `CustomScrollView` + `SliverList` 虚拟化。活动块仅占位布局，**不可**按 block.id 重建 TextField，否则 Android 会失焦。标题↔列表切换时 chromeless 层始终用 `Row + Expanded` 包裹输入框，避免结构重挂载失焦。H1/H2/H3 换级 `runtimeType` 不变，须单独 `setState` 刷新 `headingStyle(level)`；**禁止**把换级并进 `layoutChanged`（会 `_markLayoutTransition` + `forceFocus`，误走 IME 过渡）。换块后若短暂失焦，父屏会调用 `restoreFocus()`。激活非活动块时须用 `onTapDown` 全局坐标经 `plainOffsetAtGlobalTap` 落点，**禁止**写死 `offset: text.length`。空文档用 `SliverFillRemaining` 承接正文框空白点击（Overlay 仅一行高，点不到空白）；hint 叠在透明空格下方，勿再渲染「…」。最后一块为代码块时另用独立 key 的文末 fill，勿与空文档 fill 混用。聚焦 Overlay 须把垂直拖转发给外层 `CustomScrollView`（`ScrollPosition.drag`），**禁止**靠 `unfocus` / 清 `_activeBlockId` 换滚动，**禁止**外层 `onTap` 抢走单击。
 
 **Agent 注意**：跨模式 SoT 只有 `_contentController`（Markdown 字符串）。正文 **Focus / Scroll / IME·工具栏 session** 分属 `EditInputSession` 与 `LiveInputSession`（`mode_input_session.dart`），**禁止**再合并成单一 `_contentFocusNode`。
 
@@ -187,6 +187,7 @@ lib/
 ├── branding/app_icon_painter.dart     # 应用图标 Canvas 绘制（可导出 PNG）
 ├── core/debug/
 │   ├── debug_timeline.dart            # DevTools Timeline 埋点（仅 debug）
+│   ├── live_editor_timeline.dart      # Live.applyBlockType / [LiveTap] 参数纯函数
 │   ├── ime_timeline.dart              # IME metrics/settle/commit/scroll/visualShift 埋点
 │   ├── ime_debug_hud.dart             # 屏上 IME HUD 快照 / publish
 │   ├── cursor_debug_hud.dart          # 屏上光标 HUD 快照 / publish
@@ -277,6 +278,7 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── live_block_ops_test.dart
 ├── live_block_tap_ops_test.dart
 ├── live_caret_handle_test.dart
+├── live_overlay_scroll_test.dart
 ├── md_blocks_preview_test.dart
 ├── markdown_editor_helper_test.dart
 ├── memo_storage_service_test.dart
@@ -287,6 +289,7 @@ test/                              # 单元测试根目录（不参与 App 打�
 ├── process_text_capture_test.dart
 ├── android_process_text_manifest_test.dart
 ├── android_apk_output_name_test.dart
+├── project_pack_skill_test.dart
 ├── app_version_test.dart
 ├── memo_search_service_test.dart
 ├── memo_image_service_test.dart
@@ -305,11 +308,12 @@ scripts/
     ├── mode-patch/SKILL.md        # 根因已清且无架构隐患时按短方案改工程
     ├── mode-propose/SKILL.md      # 只写 proposes/<name>/{schemes,tasks}.md
     ├── mode-implement/SKILL.md    # 未决为空才落实；按步骤勾选
-    └── mode-archive/SKILL.md      # 将完成的方案目录移到 agents/archives
+    ├── mode-archive/SKILL.md      # 将完成的方案目录移到 agents/archives/<YYYYMMDD>_<name>
+    └── project-pack/SKILL.md      # 打 debug/release APK，标准包体名
 
 agents/
 ├── proposes/                      # 待落实方案：<name>/schemes.md + tasks.md
-├── archives/                      # 已完成方案归档（按需生成）
+├── archives/                      # 已完成方案归档：<YYYYMMDD>_<name>/（按需生成）
 └── fixed_list.md                  # 已修复 Bug 台账
 ```
 
@@ -321,7 +325,7 @@ agents/
 
 | 类型 | 说明 | `toMarkdown()` 示例 |
 |------|------|-------------------|
-| `HeadingBlock` | 1–6 级标题 | `# title` |
+| `HeadingBlock` | 1–6 级标题（不渲染行内格式） | `# title` |
 | `ParagraphBlock` | 段落（可含行内 markdown） | 原文 |
 | `BulletBlock` / `OrderedBlock` | 列表；`BulletBlock.checked != null` 为 GFM 勾选 | `- item` / `- [ ] item` / `- [x] item` / `1. item` |
 | `QuoteBlock` | 引用 | `> text` |
@@ -344,13 +348,14 @@ agents/
 | `TextInline` | 纯文本 |
 | `BoldInline` | `**...**` |
 | `ItalicInline` | `*...*` |
+| `StrikeInline` | `~~...~~` |
 | 粗斜体（嵌套） | `***...***` / `___...___`（解析为 Bold+Italic，序列化为 `***`） |
 | `CodeInline` | `` `...` `` |
 
 关键 API（`core/markdown/ast/md_inline.dart`）：
 
 - `parseInlineMarkdown` / `serializeInlineMarkdown`
-- `applyInlineStyle` — 实时工具栏 B/I/代码
+- `applyInlineStyle` — 实时工具栏 B/I/删除线/行内代码（工具栏序列化顺序：粗 > 斜 > 删除线）
 - `splitInlineMarkdown` — Enter 换行时按 plain 偏移拆分 markdown
 - `applyPlainTextChange` — 键入时保留行内格式
 - `mergeInlineMarkdown` — Backspace 合并块
@@ -381,8 +386,8 @@ Core 层不依赖 `MemoImageService`。预览/实时通过 `MarkdownImageResolve
 | 方法 | 作用 |
 |------|------|
 | `captureForInlineAction()` | 工具栏 `PointerDown` 时缓存选区（防 Android 失焦丢选区） |
-| `applyBold()` / `applyItalic()` / `applyInlineCode()` | 行内样式 |
-| `applyHeading(level)` / `applyBulletList()` / … | 块类型 |
+| `applyBold()` / `applyItalic()` / `applyStrikethrough()` / `applyInlineCode()` | 行内样式 |
+| `applyHeading(level)` / `applyBulletList()` / `applyCodeBlock()` / … | 块类型；代码块内除 `applyParagraph()` 外格式 no-op |
 | `splitBlockAt(cursor)` | Enter 换行 |
 | `flushToParent()` | 提交活动块并同步到 parent controller（切模式 / dispose 前） |
 
@@ -435,6 +440,8 @@ flutter pub get
 flutter gen-l10n    # 一般由 build 触发；修改 arb 后需要
 flutter run
 flutter run -d windows
+flutter build apk --release   # 标准包体 mind_recall_<version>_release.apk
+flutter build apk --debug     # 标准包体 mind_recall_<version>_debug.apk
 ```
 
 Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或以管理员运行 `flutter pub get`。
@@ -449,7 +456,8 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 - **mode-patch**（`.cursor/skills/mode-patch/SKILL.md`）：按 explore 短方案改工程（局部修复或优化）。不写 `agents/proposes/`、不归档。根因必须来自上一跳 explore；缺失、仍是假说、或动手后发现分叉/架构面则停手，打回 **mode-explore** 或 **mode-propose**。仍须补测、跑 `scripts/run_unit_tests`；Bug 则双写 `agents/fixed_list.md`。成功交付后将 `pubspec.yaml` 迭代 +1。
 - **mode-propose**（`.cursor/skills/mode-propose/SKILL.md`）：只写 `agents/proposes/<name>/schemes.md`（目标 / 方案 / 已决事项 / 关注点 / 未决事项）与 `tasks.md`（按步骤分组的勾选列表）。设计阶段把行为分叉交给用户拍板；**未决非空不得宣称可落实**。同一目标不够落地时修订该目录。若从 **mode-patch** 打回，把分叉或架构面写入合同。若用户要求改工程目录且合同已闭合，提示使用 **mode-implement**。不改版本号。
 - **mode-implement**（`.cursor/skills/mode-implement/SKILL.md`）：扫描 `agents/proposes/`，默认一次落实一个已闭合方案；先读已决与关注点，再按 `tasks.md` 步骤勾选。接线可做，合同外选择与未决事项视为停手，打回 **mode-propose**，禁止推翻已决或用领域常识补行为。该方案全部勾完且门禁通过后将小版本 +1、迭代置 0。
-- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应**目录**（或遗留单文件）从 `agents/proposes/` 移到 `agents/archives/`。不改版本号。
+- **mode-archive**（`.cursor/skills/mode-archive/SKILL.md`）：询问用户 propose 名称，将对应**目录**（或遗留单文件）从 `agents/proposes/` 移到 `agents/archives/<YYYYMMDD>_<name>/`（日期为归档当天，如 `add_text_block` → `20260912_add_text_block`）。不改版本号。
+- **project-pack**（`.cursor/skills/project-pack/SKILL.md`）：用户说「打一个release包 / 打个debug包 / 打包」时执行 `flutter build apk`；分发名为 `mind_recall_<versionName>_<debug|release>.apk`（版本取 `pubspec.yaml`，由 Gradle 命名）。不改版本号。
 
 大版本不由 AI 改。
 
@@ -457,8 +465,8 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 
 - 工具：`lib/core/debug/debug_timeline.dart`（仅 `kDebugMode` 生效，profile/release 零开销）
 - 屏上 FPS：设置 →「启用调试」→「显示帧率」→ `DebugFpsOverlay`；绿=流畅，红=近窗有慢帧或平均 < 50 FPS
-- 屏上调试信息列表：设置 →「启用调试」→ 子开关 → `DebugInfoOverlay`（左上角同一列表）；IME / 光标数据各为列表段（分隔线隔开）。IME：`p/c/t`、`burst`/`rst`/`settle`、`commit=`；光标：Live 块序号/类型/id 与选区前后文，Edit 文档选区/行列；`ctx «前|后»` 中 `|` 为光标
-- 事件名：`App.prefsLoad`、`App.imeHeightCacheLoad`、`Editor.*`（启动/打开文档）、`Live.*`（解析/换块/滚入/聚焦）、`Ime.*`（键盘 metrics/settle/commit/scroll/**visualShift**）
+- 屏上调试信息列表：设置 →「启用调试」→ 子开关 → `DebugInfoOverlay`（左上角同一列表）；IME / 光标数据各为列表段（分隔线隔开）。IME：`p/c/t`、`burst`/`rst`/`settle`、`commit=`；光标：Live 块序号/类型/id 与选区前后文，Edit 文档选区/行列；`ctx «前|后»` 中 `|` 为光标；Live 另有 `ov hit/view imeF/edF/langF sameTap`（Overlay 是否吃点击 / 是否在视口 / 会话焦点 / 同块丢落点）
+- 事件名：`App.prefsLoad`、`App.imeHeightCacheLoad`、`Editor.*`（启动/打开文档）、`Live.*`（解析/换块/滚入/聚焦）、`Ime.*`（键盘 metrics/settle/commit/scroll/**visualShift**）。块类型切换：`Live.applyBlockType`（arguments：`from`/`to`/`layoutChanged`/`didSetState`）；H1/H2/H3 换级须 `didSetState`（`layoutChanged` 仍为 false）；同类型且无需刷新 UI 时才 `Live.applyBlockType.skipSetState`；父屏已聚焦且已 defer 跳过整页重建时 `Editor.toolbarStabilize.skip`。列表点击定位：`Live.overlay.pointer`、`Live.slot.inkTap`、`Live.activateBlock`、`Live.restoreFocus`；logcat 搜 `[LiveTap]`（仅 pointer/tap/activate/restoreFocus，不每帧打印）
 - 用法：`flutter run`（debug）→ DevTools Performance，按事件名对齐卡顿帧
 - IME 停顿排查：优先看屏上 HUD；或搜 `Ime.Live.` / `Ime.Edit.` / `Ime.Toolbar.`；窄屏工具栏与正文 **nudge 同拍**显栏（有缓存 `applyCache` 当拍；无缓存 `settleDebounced`），同一次打开不爬升，仅 `raiseCache` / `correctCacheDown` 可改高度
 - IME 两次上移：无缓存时 spacer 仍 48ms settle，**nudge+工具栏 120ms 防抖**后再写入应用缓存；有缓存时首次 settle 直接套用（`applyCache`）只一拍。高度持久化在 `ime_height_cache.json`（勿写入 `user_preferences.json`）。搜 `reason`=`settleDebounced` / `applyCache` / `raiseCache` / `correctCacheDown`
@@ -532,8 +540,10 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 30. 实时光标：按列表层 `RenderParagraph` 实测；若段落 plain 尚未跟上 controller，须再等一帧测量，勿把光标钉在旧字后（父级 `_syncToParent` 有 120ms debounce，不能当光标刷新）
 31. Android「记录到笔记」：`PROCESS_TEXT` 必须用 `ProcessTextActivity` trampoline（`NEW_TASK` 打开 `MainActivity` 后立刻 `finish`/`RESULT_CANCELED`）。**禁止** `activity-alias` 到 Flutter `MainActivity`，否则源 App 黑屏卡住
 32. Android 11+ 导入 `Download` 备份：须 `MANAGE_EXTERNAL_STORAGE`（导入/导出前打开系统授权页）。卸包重装后 **禁止** 只靠 `File.copy` 读公共目录文件，会 `Permission denied`。图片在 `{id}_assets/`，导入须 Java `listFiles` + 按 Markdown 引用补拷，并声明 `READ_MEDIA_IMAGES`；**禁止**以为拷了 `.md` 图片就在。导入默认 **合并**（`DataBackupImportMode.merge`）：按文件名拷贝，空备份不得 `_clearDirectoryContents`。覆盖须用户显式选择 `overwrite`
-33. 切文档须丢掉壳层 Focus（`_titleFocusNode` / Edit / Live session），`_resumeEditorFocus` 须比对 suspend 时 memoId；搜索跳转禁止 `requestFocus`。Live 失焦 Overlay 须 `IgnorePointer`，勿只藏光标；用户收 IME 用 inset **下落** unfocus，禁止「hasFocus 且 inset≈0」。同一轮收键盘只丢一次焦点，unfocus 放帧末
+33. 切文档须丢掉壳层 Focus（`_titleFocusNode` / Edit / Live session），`_resumeEditorFocus` 须比对 suspend 时 memoId；搜索跳转禁止 `requestFocus`。Live 失焦 Overlay 须 `IgnorePointer`，勿只藏光标；用户收 IME 用 inset **下落** unfocus，禁止「hasFocus 且 inset≈0」。同一轮收键盘只丢一次焦点，unfocus 放帧末。聚焦 Overlay 须把垂直拖转发给外层 `CustomScrollView`，禁止靠 `unfocus`/清 `_activeBlockId` 换滚动，禁止外层 `onTap` 抢走单击
 34. 活动块列表槽须**始终**挂 `InkWell`（聚焦时由 Overlay 在上层吃点击）。**禁止**随焦点拆掉正在处理 `onTap` 的命中目标，否则 Android/MIUI 会 ANR
+35. 标题禁止 `MdInlineText` 解析 `~~`/`**`；须 `headingVisualPlain`，否则删除线与标题共存、实时折叠光标隐藏或偏移
+36. 实时 H1/H2/H3 换级 `runtimeType` 不变，须 `setState` 刷新 `headingStyle`；禁止并进 `layoutChanged`（会 forceFocus / IME 布局过渡）。见 `agents/fixed_list.md` → **2026-09-19 — 实时 H1/H2/H3 互切字号滞后**
 
 ### 撤回 / 重做
 

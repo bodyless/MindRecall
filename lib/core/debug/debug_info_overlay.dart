@@ -68,7 +68,13 @@ class _DebugInfoOverlayState extends State<DebugInfoOverlay> {
         nextCursor.blockIndex != _cursor.blockIndex ||
         nextCursor.blockType != _cursor.blockType ||
         nextCursor.selectionBase != _cursor.selectionBase ||
-        nextCursor.selectionExtent != _cursor.selectionExtent;
+        nextCursor.selectionExtent != _cursor.selectionExtent ||
+        nextCursor.overlayHitTestActive != _cursor.overlayHitTestActive ||
+        nextCursor.overlayInView != _cursor.overlayInView ||
+        nextCursor.imeSessionFocused != _cursor.imeSessionFocused ||
+        nextCursor.editorFocused != _cursor.editorFocused ||
+        nextCursor.languageFocused != _cursor.languageFocused ||
+        nextCursor.sameBlockTapDiscarded != _cursor.sameBlockTapDiscarded;
     if (!urgent &&
         lastAt != null &&
         now.difference(lastAt) < _uiMinInterval) {

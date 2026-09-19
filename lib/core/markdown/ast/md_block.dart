@@ -213,6 +213,22 @@ final class CodeBlock extends MdBlock {
   CodeBlock copyWithId(String id) =>
       CodeBlock(id: id, code: code, language: language);
 
+  /// [language] 传入 `null` 可清空围栏语言。
+  static const _languageUnset = Object();
+
+  CodeBlock copyWith({
+    String? code,
+    Object? language = _languageUnset,
+  }) {
+    return CodeBlock(
+      id: id,
+      code: code ?? this.code,
+      language: identical(language, _languageUnset)
+          ? this.language
+          : language as String?,
+    );
+  }
+
   @override
   String toMarkdown() {
     final lang = language ?? '';

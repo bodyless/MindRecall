@@ -66,8 +66,15 @@ MdBlock paragraphAfterSplit(MdBlock block, String markdown) {
 }) {
   final next = List<MdBlock>.of(blocks);
   final split = splitInlineMarkdown(resolvedMarkdownBeforeEdit, plainCursor);
-  next[index] = paragraphAfterSplit(next[index], split.before);
-  final newBlock = ParagraphBlock(id: idGenerator.next(), text: split.after);
+  final current = next[index];
+  final inheritFlow =
+      current is ParagraphBlock && current.continuesWithNext;
+  next[index] = paragraphAfterSplit(current, split.before);
+  final newBlock = ParagraphBlock(
+    id: idGenerator.next(),
+    text: split.after,
+    continuesWithNext: inheritFlow,
+  );
   next.insert(index + 1, newBlock);
   return (blocks: next, newActiveId: newBlock.id);
 }
@@ -116,9 +123,9 @@ MdBlock paragraphAfterSplit(MdBlock block, String markdown) {
 
 /// 用 plain 写回活动块（提交/失焦时）。
 MdBlock commitPlainToBlock(MdBlock block, String plainText) {
-  final normalized = supportsInlineFormatting(block)
-      ? plainText
-      : plainText.split('\n').first;
+  // 仅标题/列表/引用截成单行；代码块须保留换行。
+  final normalized =
+      isSingleLineBlock(block) ? plainText.split('\n').first : plainText;
   final updatedMarkdown = resolvedInlineMarkdownForEdit(block, normalized);
   if (updatedMarkdown == inlineMarkdownForBlock(block)) {
     return block;
@@ -135,6 +142,14 @@ bool isEmptyDocumentBody(List<MdBlock> blocks) {
   }
   final block = blocks.single;
   return block is ParagraphBlock && block.plainText.trim().isEmpty;
+}
+
+/// 最后一块是代码块时，文末剩余空白可点以续写正文（空文档走另一套 fill）。
+bool liveShowsTrailingAfterCodeFill(List<MdBlock> blocks) {
+  if (isEmptyDocumentBody(blocks) || blocks.isEmpty) {
+    return false;
+  }
+  return blocks.last is CodeBlock;
 }
 
 /// 列表层 [RenderParagraph] 是否已跟上活动 controller 的 plain。

@@ -47,6 +47,12 @@ class CursorDebugSnapshot {
     this.composingEnd,
     this.docLine,
     this.docColumn,
+    this.overlayHitTestActive = false,
+    this.overlayInView = false,
+    this.imeSessionFocused = false,
+    this.editorFocused = false,
+    this.languageFocused = false,
+    this.sameBlockTapDiscarded = false,
   });
 
   static const empty = CursorDebugSnapshot();
@@ -70,6 +76,18 @@ class CursorDebugSnapshot {
   final int? docLine;
   final int? docColumn;
 
+  /// Overlay 是否吃点击（正文或语言框会话仍在）。
+  final bool overlayHitTestActive;
+
+  /// 活动块 Overlay 是否视为在视口内。
+  final bool overlayInView;
+  final bool imeSessionFocused;
+  final bool editorFocused;
+  final bool languageFocused;
+
+  /// 同块 InkWell 激活时丢掉了落点。
+  final bool sameBlockTapDiscarded;
+
   @override
   bool operator ==(Object other) {
     return other is CursorDebugSnapshot &&
@@ -87,11 +105,17 @@ class CursorDebugSnapshot {
         other.composingStart == composingStart &&
         other.composingEnd == composingEnd &&
         other.docLine == docLine &&
-        other.docColumn == docColumn;
+        other.docColumn == docColumn &&
+        other.overlayHitTestActive == overlayHitTestActive &&
+        other.overlayInView == overlayInView &&
+        other.imeSessionFocused == imeSessionFocused &&
+        other.editorFocused == editorFocused &&
+        other.languageFocused == languageFocused &&
+        other.sameBlockTapDiscarded == sameBlockTapDiscarded;
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
         mode,
         focused,
         selectionBase,
@@ -107,7 +131,13 @@ class CursorDebugSnapshot {
         composingEnd,
         docLine,
         docColumn,
-      );
+        overlayHitTestActive,
+        overlayInView,
+        imeSessionFocused,
+        editorFocused,
+        languageFocused,
+        sameBlockTapDiscarded,
+      ]);
 }
 
 /// 全局光标 HUD 状态；仅 [kDebugMode] 下由编辑器 publish。
@@ -185,6 +215,16 @@ List<String> formatCursorDebugHudLines(CursorDebugSnapshot snapshot) {
   }
   if (snapshot.docLine != null && snapshot.docColumn != null) {
     lines.add('pos L${snapshot.docLine}:C${snapshot.docColumn}');
+  }
+  if (snapshot.mode == 'Live') {
+    lines.add(
+      'ov hit=${snapshot.overlayHitTestActive ? '1' : '0'} '
+      'view=${snapshot.overlayInView ? '1' : '0'} '
+      'imeF=${snapshot.imeSessionFocused ? '1' : '0'} '
+      'edF=${snapshot.editorFocused ? '1' : '0'} '
+      'langF=${snapshot.languageFocused ? '1' : '0'} '
+      'sameTap=${snapshot.sameBlockTapDiscarded ? '1' : '0'}',
+    );
   }
   lines.add('ctx «${snapshot.contextBefore}|${snapshot.contextAfter}»');
   if (snapshot.composingStart != null &&

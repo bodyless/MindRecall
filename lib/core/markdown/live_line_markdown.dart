@@ -1,4 +1,5 @@
 import 'ast/md_block.dart';
+import 'ast/md_inline.dart';
 import 'parser/markdown_block_parser.dart';
 import 'parser/md_syntax_patterns.dart';
 
@@ -44,7 +45,8 @@ String applyOrderedLineMarkdown(
 
 String applyHeadingLineMarkdown(String lineMarkdown, int level) {
   final safeLevel = level.clamp(1, 6);
-  return '${'#' * safeLevel} ${stripBlockLinePrefix(lineMarkdown)}';
+  final body = headingVisualPlain(stripBlockLinePrefix(lineMarkdown));
+  return '${'#' * safeLevel} $body';
 }
 
 String applyQuoteLineMarkdown(String lineMarkdown) =>
@@ -52,6 +54,14 @@ String applyQuoteLineMarkdown(String lineMarkdown) =>
 
 String applyParagraphLineMarkdown(String lineMarkdown) =>
     stripBlockLinePrefix(lineMarkdown);
+
+String applyCodeBlockLineMarkdown(String lineMarkdown) {
+  final body = stripBlockLinePrefix(lineMarkdown);
+  if (body.isEmpty) {
+    return '```\n```';
+  }
+  return '```\n$body\n```';
+}
 
 /// 由块类型与行内 markdown 拼出完整行级 markdown（数据层，不含 WYSIWYG 展示前缀）。
 String lineMarkdownForBlock(MdBlock block, String inlineMarkdown) {

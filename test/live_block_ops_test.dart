@@ -124,6 +124,87 @@ void main() {
       expect(triggered.id, 'p1');
     });
 
+    test('applyCodeBlockLineMarkdown strips prefixes then fences', () {
+      expect(applyCodeBlockLineMarkdown('hello'), '```\nhello\n```');
+      expect(applyCodeBlockLineMarkdown('# Title'), '```\nTitle\n```');
+      expect(applyCodeBlockLineMarkdown('- item'), '```\nitem\n```');
+      expect(applyCodeBlockLineMarkdown('> quoted'), '```\nquoted\n```');
+      expect(applyCodeBlockLineMarkdown(''), '```\n```');
+    });
+
+    test('applyBlockTrigger converts paragraph fence openers to CodeBlock', () {
+      const paragraph = ParagraphBlock(id: 'p1', text: '');
+      final emptyFence = applyBlockTrigger(paragraph, '```');
+      expect(emptyFence, isA<CodeBlock>());
+      final emptyCode = emptyFence as CodeBlock;
+      expect(emptyCode.code, '');
+      expect(emptyCode.language, isNull);
+      expect(emptyCode.id, 'p1');
+
+      final withLang = applyBlockTrigger(paragraph, '```dart') as CodeBlock;
+      expect(withLang.language, 'dart');
+      expect(withLang.code, '');
+    });
+
+    test('applyBlockTrigger does not fence-convert heading or list', () {
+      expect(
+        applyBlockTrigger(const HeadingBlock(id: 'h1', level: 1, text: ''), '```'),
+        isNull,
+      );
+      expect(
+        applyBlockTrigger(const BulletBlock(id: 'b1', text: ''), '```'),
+        isNull,
+      );
+      expect(
+        applyBlockTrigger(const QuoteBlock(id: 'q1', text: ''), '```'),
+        isNull,
+      );
+    });
+
+    test('code block unwraps to paragraph via code field', () {
+      const block = CodeBlock(id: 'c1', code: 'line1\nline2', language: 'dart');
+      expect(swallowsMarkdownToolbar(block), isTrue);
+      final paragraph = ParagraphBlock(id: block.id, text: block.code);
+      expect(paragraph.text, 'line1\nline2');
+      expect(paragraph.id, 'c1');
+      final expanded = expandMultilineParagraphsForLive(
+        [paragraph],
+        MdBlockIdGenerator(),
+      );
+      expect(expanded.length, 2);
+      expect((expanded[0] as ParagraphBlock).text, 'line1');
+      expect((expanded[1] as ParagraphBlock).text, 'line2');
+    });
+
+    test('headingVisualPlain strips strikethrough markers', () {
+      expect(headingVisualPlain('~~测试asdasdasdasd~~'), '测试asdasdasdasd');
+      expect(headingVisualPlain('**粗体**'), '粗体');
+      expect(headingVisualPlain('plain'), 'plain');
+    });
+
+    test('editableTextForBlock strips inline markers on headings', () {
+      const heading = HeadingBlock(
+        id: 'h',
+        level: 2,
+        text: '~~测试asdasdasdasd~~',
+      );
+      expect(editableTextForBlock(heading), '测试asdasdasdasd');
+      expect(hasRenderedInlineFormatting(heading), isFalse);
+      expect(
+        rendererParagraphMatchesCaretPlain(
+          controllerPlain: editableTextForBlock(heading),
+          paragraphPlain: headingVisualPlain(heading.text),
+          hasInlineFormatting: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('applyHeadingLineMarkdown strips inline markers', () {
+      expect(applyHeadingLineMarkdown('~~测试asdasdasdasd~~', 2), '## 测试asdasdasdasd');
+      expect(applyHeadingLineMarkdown('**hello**', 1), '# hello');
+    });
+
     test('heading enter sibling should be paragraph markdown transform', () {
       const heading = HeadingBlock(id: 'h1', level: 2, text: 'Title');
       expect(lineMarkdownForBlock(heading, 'next'), '## next');

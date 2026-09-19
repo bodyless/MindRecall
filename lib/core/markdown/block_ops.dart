@@ -10,6 +10,8 @@ import 'parser/markdown_block_parser.dart';
 /// 活动 [TextField] 显示 [editableTextForBlock]（plain text）。
 
 /// 块体是否支持粗体/斜体/代码等行内 Markdown。
+///
+/// 标题不在此列：工具栏不施加行内样式，渲染也须用 [headingVisualPlain]。
 bool supportsInlineFormatting(MdBlock block) {
   return switch (block) {
     ParagraphBlock() ||
@@ -20,6 +22,9 @@ bool supportsInlineFormatting(MdBlock block) {
     _ => false,
   };
 }
+
+/// 代码块吞掉 markdown：除「正文」外工具栏格式对当前块无效。
+bool swallowsMarkdownToolbar(MdBlock block) => block is CodeBlock;
 
 /// 块上存储的原始行内 markdown（不含 `#` 等块级前缀）。
 String inlineMarkdownForBlock(MdBlock block) {
@@ -35,6 +40,9 @@ String inlineMarkdownForBlock(MdBlock block) {
 
 /// 活动输入框显示的 plain text（已去掉行内标记）。
 String editableTextForBlock(MdBlock block) {
+  if (block is HeadingBlock) {
+    return headingVisualPlain(block.text);
+  }
   if (supportsInlineFormatting(block)) {
     return plainTextFromInlines(
       parseInlineMarkdown(inlineMarkdownForBlock(block)),

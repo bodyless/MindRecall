@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:mind_recall/core/markdown/ast/md_inline.dart';
+
 /// Markdown 正文编辑辅助：基于 [TextEditingController] 选区插入语法。
 class MarkdownEditorHelper {
   static void wrapSelection(
@@ -45,7 +47,8 @@ class MarkdownEditorHelper {
       controller,
       (line) {
         final stripped = line.replaceFirst(RegExp(r'^#{1,6}\s*'), '');
-        return '${'#' * safeLevel} $stripped';
+        final body = headingVisualPlain(stripped);
+        return '${'#' * safeLevel} $body';
       },
     );
   }
@@ -111,10 +114,53 @@ class MarkdownEditorHelper {
   }
 
   static const _thematicBreakSnippet = '\n---\n';
+  static const _codeFenceMarker = '```';
 
   /// 在光标处插入 Markdown 分割线。
   static void insertThematicBreak(TextEditingController controller) {
     insertAtCursor(controller, _thematicBreakSnippet);
+  }
+
+  /// 用围栏代码块包裹选区；无选区则在光标处插入空围栏。
+  static void insertCodeBlockFence(TextEditingController controller) {
+    final value = controller.value;
+    final selection = value.selection;
+    if (!selection.isValid) {
+      return;
+    }
+
+    final text = value.text;
+    if (!selection.isCollapsed) {
+      final start =
+          selection.start < selection.end ? selection.start : selection.end;
+      final end =
+          selection.start < selection.end ? selection.end : selection.start;
+      final selected = text.substring(start, end);
+      final wrapped = '$_codeFenceMarker\n$selected\n$_codeFenceMarker';
+      final newText = text.substring(0, start) + wrapped + text.substring(end);
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: start + _codeFenceMarker.length + 1 + selected.length,
+        ),
+      );
+      return;
+    }
+
+    final pos = selection.start.clamp(0, text.length);
+    final prefix = text.substring(0, pos);
+    final suffix = text.substring(pos);
+    final needLeadingNewline = prefix.isNotEmpty && !prefix.endsWith('\n');
+    final atEof = pos == text.length;
+    final leading = needLeadingNewline ? '\n' : '';
+    final trailing = atEof ? '\n\n' : '\n';
+    final snippet = '$leading$_codeFenceMarker\n\n$_codeFenceMarker$trailing';
+    controller.value = TextEditingValue(
+      text: prefix + snippet + suffix,
+      selection: TextSelection.collapsed(
+        offset: prefix.length + leading.length + _codeFenceMarker.length + 1,
+      ),
+    );
   }
 
   /// 插入或包裹 Markdown 链接 `[text](url)`。
