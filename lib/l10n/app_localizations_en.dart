@@ -36,6 +36,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newFolder => 'New folder';
 
   @override
+  String get importDocument => 'Import document';
+
+  @override
+  String get importEncodingUnsupported => 'This file is not valid UTF-8 or GBK';
+
+  @override
   String get goToParentDirectory => 'Go to parent folder';
 
   @override
@@ -174,6 +180,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsFontSize => 'Font size';
+
+  @override
+  String get settingsFileSort => 'File sort';
+
+  @override
+  String get fileSortModifiedTime => 'Modified time';
+
+  @override
+  String get fileSortName => 'Name';
 
   @override
   String get settingsDebug => 'Debug';

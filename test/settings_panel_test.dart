@@ -47,6 +47,7 @@ void main() {
           onThemeModeChanged: (_) {},
           onLocaleChanged: (_) {},
           onFontSizeChanged: (_) {},
+          onFileListSortChanged: (_) {},
           onDebugToolsChanged: (_) {},
           onDebugShowFpsChanged: (_) {},
           onDebugShowImeHudChanged: (_) {},
@@ -61,6 +62,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('格式'), findsOneWidget);
+    expect(find.text('文件排序'), findsOneWidget);
+    expect(find.text('修改时间'), findsOneWidget);
+    expect(find.text('名称'), findsOneWidget);
     expect(find.text('数据'), findsOneWidget);
     expect(kDebugMode, isTrue);
     expect(find.text('调试'), findsOneWidget);
@@ -88,6 +92,7 @@ void main() {
           onThemeModeChanged: (_) {},
           onLocaleChanged: (_) {},
           onFontSizeChanged: (_) {},
+          onFileListSortChanged: (_) {},
           onDebugToolsChanged: (_) {},
           onDebugShowFpsChanged: (_) {},
           onDebugShowImeHudChanged: (_) {},
@@ -112,6 +117,7 @@ void main() {
           onThemeModeChanged: (_) {},
           onLocaleChanged: (_) {},
           onFontSizeChanged: (_) {},
+          onFileListSortChanged: (_) {},
           appVersionLabel: label,
         ),
       ),

@@ -14,6 +14,26 @@ void main() {
       expect((blocks[1] as ParagraphBlock).text, 'Hello **world**');
     });
 
+    test('CRLF heading and ordered list are not body lines', () {
+      final blocks = parseMarkdownBlocks('### 标题\r\n1. item\r\n');
+
+      expect(blocks, hasLength(2));
+      expect(blocks[0], isA<HeadingBlock>());
+      expect((blocks[0] as HeadingBlock).level, 3);
+      expect((blocks[0] as HeadingBlock).text, '标题');
+      expect(blocks[1], isA<OrderedBlock>());
+      expect((blocks[1] as OrderedBlock).text, 'item');
+    });
+
+    test('hash comment inside a CRLF fence stays in the code block', () {
+      final blocks = parseMarkdownBlocks('```python\r\n# 注释\r\n```\r\n');
+
+      expect(blocks.single, isA<CodeBlock>());
+      final code = blocks.single as CodeBlock;
+      expect(code.language, 'python');
+      expect(code.code, '# 注释');
+    });
+
     test('round-trips block content (blank lines between blocks are normalized)', () {
       const text = '# Title\n\nBody line';
       final blocks = parseMarkdownBlocks(text);
@@ -154,6 +174,23 @@ void main() {
       expect(code, isA<CodeBlock>());
       expect((code as CodeBlock).code, 'print(1);');
       expect(code.language, 'dart');
+    });
+
+    test('带双引号标题的图片行拆出路径并写回标题', () {
+      const source = '![说明](./a.png "标题")';
+      final block = parseMarkdownBlocks(source).single as ImageBlock;
+      expect(block.src, './a.png');
+      expect(block.title, '标题');
+      expect(block.alt, '说明');
+      expect(serializeMdBlocks([block]), source);
+    });
+
+    test('无标题图片往返不变', () {
+      const source = '![说明](./a.png)';
+      final blocks = parseMarkdownBlocks(source);
+      expect((blocks.single as ImageBlock).title, isNull);
+      expect((blocks.single as ImageBlock).src, './a.png');
+      expect(serializeMdBlocks(blocks), source);
     });
 
     test('supportsPlainEditing is false only for atomic blocks', () {

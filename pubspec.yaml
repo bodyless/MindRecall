@@ -6,7 +6,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # 产品版本：大.小.迭代（例如 0.0.2）。唯一源；APK 文件名与设置面板只展示该值。
 # 不使用 +buildNumber。
-version: 0.3.1
+version: 0.4.0
 
 environment:
   sdk: ^3.10.3
@@ -30,6 +30,7 @@ dependencies:
   file_picker: ^8.1.7
   url_launcher: ^6.3.2
   package_info_plus: ^8.3.0
+  enough_convert: ^1.6.0
 
 dev_dependencies:
   flutter_test:

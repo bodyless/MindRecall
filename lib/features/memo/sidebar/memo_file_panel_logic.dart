@@ -1,6 +1,7 @@
 /// 侧栏 / 抽屉文件面板的纯逻辑（便于单测，无 Flutter 依赖）。
 
 import 'package:mind_recall/models/memo_folder.dart';
+import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/memo_fs_constants.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 
@@ -50,11 +51,15 @@ List<MemoDirEntry> sortMemoDirEntries({
   required List<MemoDirEntry> entries,
   required List<String> pinnedFolderIds,
   required List<String> pinnedMemoIds,
+  FileListSort fileListSort = FileListSort.modifiedTime,
+  String untitledLabel = '',
 }) {
   return MemoStorageService.sortDirEntries(
     entries: entries,
     pinnedFolderIds: pinnedFolderIds,
     pinnedMemoIds: pinnedMemoIds,
+    fileListSort: fileListSort,
+    untitledLabel: untitledLabel,
   );
 }
 

@@ -2384,6 +2384,11 @@ class LiveMarkdownEditorState extends State<LiveMarkdownEditor> {
       final oldPlain = editableTextForBlock(block);
       final newPlain = editableTextForBlock(reparsed);
       _blocks[index] = reparsed;
+      paragraphFlowAfterHeadingToBody(
+        blocks: _blocks,
+        index: index,
+        before: block,
+      );
       if (layoutChanged) {
         syncParagraphFlowFlags(_blocks);
       }

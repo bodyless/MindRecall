@@ -21,7 +21,7 @@
 ### 主要依赖
 
 - `path_provider` / `path` — 存储路径
-- `file_picker` — 插入本地图片
+- `file_picker` — 插入本地图片；从侧栏导入外部 txt/md
 - **无** `flutter_markdown`：预览与实时模式使用自研 AST 渲染器
 
 ---
@@ -34,7 +34,7 @@
 - 存储根目录：**各平台 Downloads 下的 `MindRecall/`**（无法访问 Downloads 时回退到应用 Documents）。笔记树在 `documents/`，与 `trash/` 分离。Android 11+ 导入公共目录备份须系统「所有文件访问」权限（卸包重装后旧备份不再视为本应用文件）
 - 文件格式：`标题` + 空行 + `正文`（标题为空则整文件为正文）
 - 自动保存（约 800ms debounce）；切换文件 / 切预览前 `flushSave`
-- 侧栏浏览当前目录：文件夹（时间戳 id + `{id}.fileconf` 显示名）排在文件前；点进文件夹 / 返回上级；文件夹行显示目录修改时间（格式同文件）；`+` 可新建文件（当前目录，UX 同前）或新建文件夹
+- 侧栏浏览当前目录：文件夹（时间戳 id + `{id}.fileconf` 显示名）排在文件前；点进文件夹 / 返回上级；文件夹行显示目录修改时间（格式同文件）；`+` 可新建文件（当前目录，UX 同前）、新建文件夹，或导入外部 txt/md（新时间戳 id、保留 `.txt` 或 `.md`、打开新篇；先按 UTF-8 读，失败再按 GBK，保存一律 UTF-8；单独成行的本地图拷入 `{id}_assets/`，缺图不阻断）
 - 新建、重命名（笔记改标题字段；文件夹只改 conf）、设置文件夹颜色（长按与 `⋮` 同一菜单；行左侧色条；写入 `{id}.fileconf` 的 `color`）、移动到已有目录（含根；长按与 `⋮` 同一菜单；搬完侧栏不跟、不切正在编辑的文档）、删除、在资源管理器中显示（文件；Android / 桌面平台）
 
 ### 编辑器三种模式 (`EditorViewMode`)
@@ -43,7 +43,7 @@
 |------|------|------|
 | **编辑** `edit` | `TextField` + `MarkdownToolbar` | 直接编辑 Markdown 源码；工具栏插入 `#`、`**`、列表等 |
 | **实时** `live` | `LiveMarkdownEditor` + `LiveMarkdownToolbar` | 块级 WYSIWYG；块内隐藏 `#`/`-` 等前缀；段落/列表/引用支持行内粗体/斜体/删除线/代码（标题只显示纯文本）；列表按 `ListView.builder` 虚拟化滚动 |
-| **预览** `preview` | `MemoMarkdownPreview` → `MdBlocksPreview` | 只读渲染正文 Markdown（不再额外拼标题）；与实时模式共用渲染栈；切入预览时主动失焦，不立刻弹键盘 |
+| **预览** `preview` | `MemoMarkdownPreview` → `MdBlocksPreview` | 只读渲染正文 Markdown（不再额外拼标题）；与实时模式共用渲染栈；切入预览时主动失焦，不立刻弹键盘。桌面滚轮用预览自持的 `ScrollController`（移动端不传，继续继承 `PrimaryScrollController`） |
 
 三种模式共享同一数据源：`MemoEditorScreen` 的 `_titleController` / `_contentController`。
 
@@ -66,9 +66,9 @@
 
 - 宽屏（≥720px）左侧可折叠文件栏；窄屏 Drawer（左半屏 + 安全区可边缘滑动；仅系统 IME 可见时禁用侧滑；收起键盘后无光标但仍可侧滑）
 - 打开已有文档默认无光标（点一下才有）；同篇开关文件栏恢复刚才的光标；换篇不继承；用户收起输入法后无光标。聚焦且 IME 仍开时，在活动块文字上垂直拖即可滚列表，单击一次落光标。新建、插入图、系统选区「记录到笔记」仍聚焦正文；搜索跳转只滚到匹配处、不自动出光标
-- 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`；导入须选合并或覆盖，默认合并：按文件名添加或覆盖同名，空备份不清空本地；覆盖则先清空再写入；回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本（`pubspec.yaml` 的 `大.小.迭代`，不含 buildNumber）
+- 设置（三大类）：**格式**（语言、主题、字体小/中/大，相对缩放 0.75 / 1.0 / 1.25；文件排序为修改时间 / 名称，默认修改时间）；**数据**（导出/导入文档目录 `MindRecall/` + `user_preferences.json`；导入须选合并或覆盖，默认合并：按文件名添加或覆盖同名，空备份不清空本地；覆盖则先清空再写入；回收站清空/恢复）；**调试**（Debug 构建总开关「启用调试」，开启后可选「显示帧率」「显示IME状态」「显示光标状态」）；记住上次打开的备忘录；顶部显示 App 版本（`pubspec.yaml` 的 `大.小.迭代`，不含 buildNumber）
 - **本地会话缓存**（`session_cache.json`，应用 support 目录）：当前打开文档、当前侧栏目录、文件置顶与文件夹置顶；不可随备份迁移
-- 侧栏支持置顶（后置顶靠前，左上角深色角标）；当前层顺序为置顶文件夹 → 置顶文件 → 文件夹（建立时间）→ 文件（最后修改时间降序）
+- 侧栏支持置顶（后置顶靠前，左上角深色角标）；默认当前层顺序为置顶文件夹 → 置顶文件 → 文件夹（建立时间）→ 文件（最后修改时间降序）。选「名称」时非置顶文件夹与非置顶文件改为可见名称的码元升序，整段相同不再区分。搜索与移动目录树不使用该设置
 - 删除有内容文档或整棵文件夹 → `MindRecall/trash/`（`manifest.json` 记原父路径；父目录不在则恢复到 `documents/` 根）；空文档直接删除
 - **IME 高度缓存**（`ime_height_cache.json`，应用 support 目录）：按视口分桶记住键盘高度，重启后第一次打开即可套用；换键盘/候选栏导致高度变化时自动改写。不随备份迁移
 - 编辑 / 实时 / 预览底边适配系统导航栏（`viewPadding.bottom`）
@@ -157,7 +157,7 @@ flowchart TB
 
 **Agent 注意**：实时模式按**块**编辑，不是按 TextField 行。从编辑模式进入时，`expandMultilineParagraphsForLive` 会把含 `\n` 的段落拆成每行一块；否则 H2/列表等块级操作会作用于整段。
 
-**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`。连续段落行之间不加块间距。正文**中间** Enter 时，新块须继承被拆块原有的 `continuesWithNext`（`splitMultilineBlockAt`），否则与后续行会变成 `blockGap`，切模式重解析才恢复。正文 Enter 后立刻改成列表/标题/分割线时须 `syncParagraphFlowFlags` 清掉已过期的 flow 标记，**禁止**只信 `continuesWithNext` 而不看下一块类型（否则正文↔列表会像段内行距，切模式重解析才恢复）。连续列表项用 `listItemGap`（比 `blockGap` 更紧凑）。实时槽位垂直 padding 为 0、顶边距与预览同为 `editorBodyTopPadding`，避免同样内容在实时里更疏。
+**行距**：同一段落内换行（Enter 或多行展开）在 AST 上标记 `ParagraphBlock.continuesWithNext`；预览与实时共用 `MdBlockStyles.bottomSpacingFor` / `slotPaddingFor`。连续段落行之间不加块间距。正文**中间** Enter 时，新块须继承被拆块原有的 `continuesWithNext`（`splitMultilineBlockAt`），否则与后续行会变成 `blockGap`，切模式重解析才恢复。正文 Enter 后立刻改成列表/标题/分割线时须 `syncParagraphFlowFlags` 清掉已过期的 flow 标记，**禁止**只信 `continuesWithNext` 而不看下一块类型（否则正文↔列表会像段内行距，切模式重解析才恢复）。标题点「正文」时，须 `paragraphFlowAfterHeadingToBody` 把新块与紧邻的上下段落收成段内行距（间距由上一块的 `continuesWithNext` 决定，只标新块收不紧它上面那条缝）；**禁止**改 `syncParagraphFlowFlags` 去给所有相邻段落打标。连续列表项用 `listItemGap`（比 `blockGap` 更紧凑）。实时槽位垂直 padding 为 0、顶边距与预览同为 `editorBodyTopPadding`，避免同样内容在实时里更疏。
 
 **Enter 换行**（实时模式）：
 - **段落块**：`_NewBlockEnterFormatter` 在光标处 `splitBlockAt` → `splitMultilineBlockAt`
@@ -544,6 +544,8 @@ Windows 首次构建若遇 symlink 错误，需开启「开发人员模式」或
 34. 活动块列表槽须**始终**挂 `InkWell`（聚焦时由 Overlay 在上层吃点击）。**禁止**随焦点拆掉正在处理 `onTap` 的命中目标，否则 Android/MIUI 会 ANR
 35. 标题禁止 `MdInlineText` 解析 `~~`/`**`；须 `headingVisualPlain`，否则删除线与标题共存、实时折叠光标隐藏或偏移
 36. 实时 H1/H2/H3 换级 `runtimeType` 不变，须 `setState` 刷新 `headingStyle`；禁止并进 `layoutChanged`（会 forceFocus / IME 布局过渡）。见 `agents/fixed_list.md` → **2026-09-19 — 实时 H1/H2/H3 互切字号滞后**
+37. 桌面预览滚轮：`Scrollbar` 与 `ListView` 须共用显式 `ScrollController`，并关掉桌面自动第二条滚动条。移动端保持 `controller: null` 以继承 `PrimaryScrollController`。禁止为修桌面给安卓接显式 controller，也禁止 `primary: true` 去占 Scaffold 主控制器。见 `agents/fixed_list.md` → **2026-10-01 — 桌面预览滚轮 Scrollbar 无 ScrollPosition**
+38. `parseMarkdownBlocks` 切开前须把 `\r\n` / `\r` 换成 `\n`。只 `split('\n')` 时行尾 `\r` 会让标题和有序列表的 `$` 匹配失败，字面 `###` / `1. ` 留在正文里。禁止只改标题正则。见 `agents/fixed_list.md` → **2026-10-01 — CRLF 标题与有序列表被当成正文**
 
 ### 撤回 / 重做
 

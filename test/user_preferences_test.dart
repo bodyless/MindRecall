@@ -32,6 +32,29 @@ void main() {
     expect(restored.debugShowCursorHud, isFalse);
   });
 
+  test('serializes file list sort and defaults when missing', () {
+    const prefs = UserPreferences(
+      themeMode: ThemeMode.light,
+      localeCode: 'zh',
+      fileListSort: FileListSort.name,
+    );
+    final restored = UserPreferences.fromJson(prefs.toJson());
+    expect(restored.fileListSort, FileListSort.name);
+
+    final missing = UserPreferences.fromJson({
+      'themeMode': 'light',
+      'localeCode': 'zh',
+    });
+    expect(missing.fileListSort, FileListSort.modifiedTime);
+
+    final unknown = UserPreferences.fromJson({
+      'themeMode': 'light',
+      'localeCode': 'zh',
+      'fileListSort': 'size',
+    });
+    expect(unknown.fileListSort, FileListSort.modifiedTime);
+  });
+
   test('missing debug sub switch keys default to true', () {
     final restored = UserPreferences.fromJson({
       'themeMode': 'light',

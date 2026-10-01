@@ -8,6 +8,9 @@
 
 ## 目录
 
+- 2026-10-01 — CRLF 标题与有序列表被当成正文
+- 2026-10-01 — 桌面预览滚轮 Scrollbar 无 ScrollPosition
+- 2026-09-23 — 标题改正文后与相邻正文仍是块间距
 - 2026-09-19 — 实时 H1/H2/H3 互切字号滞后
 - 2026-09-13 — 代码块多行失焦只留第一行
 - 2026-09-13 — 空代码块无深色框
@@ -85,6 +88,25 @@
 ---
 
 ## 清单
+
+### 2026-10-01 — CRLF 标题与有序列表被当成正文
+- **现象**：导入的 CRLF 文档里，`### 标题` 仍显示字面 `###` 且字号是正文。`1. ` 也留在正文里。代码块正常，因为围栏行往往是单独的 LF。
+- **根因**：`parseMarkdownBlocks` 只 `split('\n')`，行尾 `\r` 留在行内。`headingLine` / `orderedLine` 的 `.` 不匹配 `\r`，`$` 也不落在它前面，整行落入段落。
+- **修复要点**：切开之前把 `\r\n` 和单独的 `\r` 换成 `\n`，与 `normalizePastedMarkdown` 一致。**禁止**只在标题正则上放宽 `$`，有序列表是同一处行尾。**禁止**把围栏内的 `# 注释` 拆出代码块。
+- **相关**：`lib/core/markdown/parser/markdown_block_parser.dart`、`test/markdown_block_ast_test.dart`
+
+### 2026-10-01 — 桌面预览滚轮 Scrollbar 无 ScrollPosition
+- **现象**：Windows 预览里拨滚轮报错：`Scrollbar` 的 `ScrollController` 没有 `ScrollPosition`（`PrimaryScrollController`，no clients）。安卓预览滚动正常。
+- **根因**：`MemoMarkdownPreview` 的 `Scrollbar` 与 `ListView` 都未传 controller。桌面 `ListView` 不继承 `PrimaryScrollController`，滚轮让外层滚动条淡入时断言失败。
+- **修复要点**：仅 Windows / macOS / Linux 为预览自持 `ScrollController`，`Scrollbar` 与 `ListView` 共用，并关掉桌面自动第二条滚动条。移动端必须仍传 null，禁止为修桌面而给安卓接显式 controller（会脱离 `PrimaryScrollController`，短文滚动物理与 Page Up/Down 会变）。禁止把预览 `ListView` 设成 `primary: true` 去占 Scaffold 的主控制器。
+- **相关**：`lib/features/memo/editor/widgets/memo_markdown_preview.dart`、`test/memo_markdown_preview_test.dart`
+
+### 2026-09-23 — 标题改正文后与相邻正文仍是块间距
+- **现象**：标题下方已有正文，点工具栏「正文」后字号变成正文，两行间距仍是标题时的块间距
+- **根因**：`_applyLineMarkdownTransform` 重解析出的 `ParagraphBlock.continuesWithNext` 默认为 false；`syncParagraphFlowFlags` 只清不设，`bottomSpacingFor` 继续返回 `blockGap`
+- **修复要点**：仅标题 → 段落时，用 `paragraphFlowAfterHeadingToBody` 给新块以及紧邻的上一段落打 flow。块间距看的是上一块的标记，只标新块收不紧它上面那条缝。**禁止**把 `syncParagraphFlowFlags` 改成给所有相邻段落 SET flag。列表/引用改成正文不在这条路径打标
+- **相关**：`live_session_ops.dart`、`live_markdown_editor.dart`、`test/live_session_ops_test.dart`
+- **回归再修**：上文 + 标题 + 下文时，只给新块打标，第一行与第二行仍是 `blockGap`。必须同时把上一段落的 `continuesWithNext` 设为 true
 
 ### 2026-09-19 — 实时 H1/H2/H3 互切字号滞后
 - **现象**：实时模式工具栏在 H1 / H2 / H3 之间切换时，标题字号有时要停约一秒才变

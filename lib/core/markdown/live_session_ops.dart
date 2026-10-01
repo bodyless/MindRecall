@@ -173,6 +173,37 @@ bool rendererParagraphMatchesCaretPlain({
   return paragraphPlain == controllerPlain;
 }
 
+/// 标题经正文按钮变成段落后，与紧邻的上下段落收成段内行距。
+///
+/// 块间距看的是上一块的 [ParagraphBlock.continuesWithNext]。只给新块打标
+/// 只能收紧它和下一块的缝，上一行正文到底下仍是 `blockGap`。
+/// [blocks] 的 [index] 须已换成重解析后的块。只处理标题 → 段落；
+/// 上一块不是段落时不改它。就地修改。
+void paragraphFlowAfterHeadingToBody({
+  required List<MdBlock> blocks,
+  required int index,
+  required MdBlock before,
+}) {
+  if (index < 0 || index >= blocks.length) {
+    return;
+  }
+  final current = blocks[index];
+  if (before is! HeadingBlock || current is! ParagraphBlock) {
+    return;
+  }
+  final next = index + 1 < blocks.length ? blocks[index + 1] : null;
+  if (next is ParagraphBlock) {
+    blocks[index] = current.copyWith(continuesWithNext: true);
+  }
+  if (index == 0) {
+    return;
+  }
+  final previous = blocks[index - 1];
+  if (previous is ParagraphBlock) {
+    blocks[index - 1] = previous.copyWith(continuesWithNext: true);
+  }
+}
+
 /// 仅段落块可携带 [ParagraphBlock.continuesWithNext]。
 MdBlock copyWithContinuesWithNext(
   MdBlock block, {

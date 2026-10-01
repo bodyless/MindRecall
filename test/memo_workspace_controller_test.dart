@@ -4,6 +4,7 @@ import 'package:mind_recall/features/memo/editor/memo_workspace_controller.dart'
 import 'package:mind_recall/features/memo/sidebar/memo_file_panel_logic.dart';
 import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_folder.dart';
+import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/memo_fs_constants.dart';
 import 'package:path/path.dart' as p;
 
@@ -82,6 +83,23 @@ class _FakeStore implements MemoWorkspaceStore {
       id: id,
       updatedAt: DateTime(2026, 1, 1),
       filePath: filePath,
+    );
+  }
+
+  @override
+  Future<Memo> importExternalMemo({
+    required String sourcePath,
+    required String relativeParent,
+  }) async {
+    final id = 'import-${memos.length}';
+    final ext = p.extension(sourcePath).toLowerCase();
+    final filePath =
+        relativeParent.isEmpty ? '$id$ext' : '$relativeParent/$id$ext';
+    return put(
+      id: id,
+      updatedAt: DateTime(2026, 1, 1),
+      filePath: filePath,
+      content: sourcePath,
     );
   }
 
@@ -516,6 +534,47 @@ void main() {
 
     expect(workspace.pinnedMemoIds, ['older']);
     expect(workspace.dirEntries.map((e) => e.id).toList(), ['older', 'newer']);
+  });
+
+  test('setFileListSort 按可见名称重排当前目录且不改变条目集合', () async {
+    pins.pinnedFolderIds = ['f-pin'];
+    pins.pinnedIds = ['m-pin'];
+    store.folders['f-pin'] = MemoFolder(
+      id: 'f-pin',
+      directoryPath: 'f-pin',
+      displayName: 'z',
+      createdAt: DateTime(2020, 1, 1),
+    );
+    store.folders['f-b'] = MemoFolder(
+      id: 'f-b',
+      directoryPath: 'f-b',
+      displayName: 'b',
+      createdAt: DateTime(2026, 6, 1),
+    );
+    store.folders['f-a'] = MemoFolder(
+      id: 'f-a',
+      directoryPath: 'f-a',
+      displayName: 'A',
+      createdAt: DateTime(2026, 1, 1),
+    );
+    store.put(id: 'm-z', title: 'Zed', updatedAt: DateTime(2026, 8, 1));
+    store.put(id: 'm-app', title: 'App', updatedAt: DateTime(2026, 1, 1));
+    store.put(id: 'm-pin', title: 'aaa', updatedAt: DateTime(2025, 1, 1));
+
+    await workspace.loadPinsAndList();
+    final before = workspace.dirEntries.map((e) => e.id).toSet();
+
+    workspace.setFileListSort(FileListSort.name);
+
+    expect(workspace.dirEntries.map((e) => e.id).toSet(), before);
+    expect(workspace.dirEntries.map((e) => e.id).toList(), [
+      'f-pin',
+      'm-pin',
+      'f-a',
+      'f-b',
+      'm-app',
+      'm-z',
+    ]);
   });
 
   test('loadPinsAndList 在 pin store 慢于 300ms 时仍应用置顶', () async {

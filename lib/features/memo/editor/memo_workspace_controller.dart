@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_folder.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
+import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/data_backup_service.dart';
 import 'package:mind_recall/services/memo_fs_constants.dart';
 import 'package:mind_recall/services/memo_search_service.dart';
@@ -22,6 +23,10 @@ abstract class MemoWorkspaceStore {
   Future<List<MemoDirEntry>> listDirEntries(String relativeParent);
   Future<Memo> loadMemo(String id);
   Future<Memo> createMemo({String relativeParent = ''});
+  Future<Memo> importExternalMemo({
+    required String sourcePath,
+    required String relativeParent,
+  });
   Future<Memo> updateMemo({
     required String id,
     required String title,
@@ -74,6 +79,17 @@ class DiskMemoWorkspaceStore implements MemoWorkspaceStore {
   @override
   Future<Memo> createMemo({String relativeParent = ''}) {
     return _storage.createMemo(relativeParent: relativeParent);
+  }
+
+  @override
+  Future<Memo> importExternalMemo({
+    required String sourcePath,
+    required String relativeParent,
+  }) {
+    return _storage.importExternalMemo(
+      sourcePath: sourcePath,
+      relativeParent: relativeParent,
+    );
   }
 
   @override
@@ -248,7 +264,11 @@ class MemoWorkspaceController extends ChangeNotifier {
   final MemoSearchService _searchService;
 
   /// 搜索无标题文档时的展示文案；由 Screen 按当前语言写入。
+  /// 名称排序也用它，与侧栏 [Memo.displayTitle] 一致。
   String untitledLabel = 'Untitled';
+
+  /// 当前目录非置顶段的排序；缺省为修改时间。
+  FileListSort fileListSort = FileListSort.modifiedTime;
 
   /// 全库笔记索引（搜索 / 文档链接）。
   List<Memo> memos = [];
@@ -347,7 +367,26 @@ class MemoWorkspaceController extends ChangeNotifier {
       entries: listed,
       pinnedFolderIds: pinnedFolderIds,
       pinnedMemoIds: pinnedMemoIds,
+      fileListSort: fileListSort,
+      untitledLabel: untitledLabel,
     );
+  }
+
+  /// 按当前排序重排已加载的目录条目，不读磁盘、不重跑搜索。
+  void resortDirEntries() {
+    dirEntries = MemoStorageService.sortDirEntries(
+      entries: dirEntries,
+      pinnedFolderIds: pinnedFolderIds,
+      pinnedMemoIds: pinnedMemoIds,
+      fileListSort: fileListSort,
+      untitledLabel: untitledLabel,
+    );
+    notifyListeners();
+  }
+
+  void setFileListSort(FileListSort value) {
+    fileListSort = value;
+    resortDirEntries();
   }
 
   Future<void> enterFolder(String folderId) async {
@@ -619,6 +658,18 @@ class MemoWorkspaceController extends ChangeNotifier {
     return memo;
   }
 
+  /// 导入外部 txt/md 到当前目录并打开。不退出搜索，与 [createNewMemo] 相同。
+  Future<Memo> importExternalMemo(String sourcePath) async {
+    await flushSave();
+    final memo = await _store.importExternalMemo(
+      sourcePath: sourcePath,
+      relativeParent: currentRelativeDir,
+    );
+    applyMemoToEditors(memo);
+    await refreshList(selectId: memo.id);
+    return memo;
+  }
+
   /// 将已规范化的选区文本写入笔记并立刻保存。
   ///
   /// 当前活动篇标题与正文都为空时复用该篇，否则先 [createNewMemo]。
@@ -682,6 +733,8 @@ class MemoWorkspaceController extends ChangeNotifier {
       entries: dirEntries,
       pinnedFolderIds: pinnedFolderIds,
       pinnedMemoIds: pinnedMemoIds,
+      fileListSort: fileListSort,
+      untitledLabel: untitledLabel,
     );
     notifyListeners();
   }
@@ -692,6 +745,8 @@ class MemoWorkspaceController extends ChangeNotifier {
       entries: dirEntries,
       pinnedFolderIds: pinnedFolderIds,
       pinnedMemoIds: pinnedMemoIds,
+      fileListSort: fileListSort,
+      untitledLabel: untitledLabel,
     );
     notifyListeners();
   }

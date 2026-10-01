@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mind_recall/app_layout_constants.dart';
 import 'package:mind_recall/models/memo.dart';
 import 'package:mind_recall/models/memo_folder.dart';
+import 'package:mind_recall/models/user_preferences.dart';
 import 'package:mind_recall/services/memo_fs_constants.dart';
 import 'package:mind_recall/services/memo_storage_service.dart';
 import 'package:mind_recall/services/memo_trash_service.dart';
@@ -200,6 +202,97 @@ void main() {
         'f-old',
         'm-new',
         'm-old',
+      ]);
+    });
+
+    test('sortDirEntries 名称序：码元升序，相同可见文本不再区分', () {
+      MemoDirEntry folder(String id, String name) {
+        return MemoDirEntry.folder(
+          MemoFolder(
+            id: id,
+            directoryPath: id,
+            displayName: name,
+            createdAt: DateTime(2020, 1, 1),
+          ),
+        );
+      }
+
+      MemoDirEntry file({
+        required String id,
+        String title = '',
+        String content = '',
+      }) {
+        return MemoDirEntry.file(
+          Memo(
+            id: id,
+            title: title,
+            content: content,
+            filePath: '$id.md',
+            createdAt: DateTime(2020, 1, 1),
+            updatedAt: DateTime(2020, 1, 1),
+          ),
+        );
+      }
+
+      const untitled = '无标题';
+      final sameA = file(id: '1', title: 'Same');
+      final sameB = file(id: '9', title: 'Same');
+      expect(
+        MemoStorageService.compareDirEntryByVisibleName(sameA, sameB, untitled),
+        0,
+      );
+
+      final longTailZ = 'A' * kMemoTitlePreviewMaxLength + 'Z';
+      final longTailA = 'A' * kMemoTitlePreviewMaxLength + 'A';
+      final truncatedZ = file(id: 'tz', content: longTailZ);
+      final truncatedA = file(id: 'ta', content: longTailA);
+      expect(
+        MemoStorageService.compareDirEntryByVisibleName(
+          truncatedZ,
+          truncatedA,
+          untitled,
+        ),
+        0,
+      );
+      expect(
+        truncatedZ.memo!.displayTitle(untitled),
+        'A' * kMemoTitlePreviewMaxLength + '…',
+      );
+
+      final empty = file(id: 'empty');
+      final titled = file(id: 'titled', title: '无标题');
+      expect(
+        MemoStorageService.compareDirEntryByVisibleName(empty, titled, untitled),
+        0,
+      );
+
+      final sorted = MemoStorageService.sortDirEntries(
+        entries: [
+          file(id: 'apple', title: 'apple'),
+          folder('fb', 'b'),
+          file(id: 'zed', title: 'Zed'),
+          folder('pin-f', 'zzz'),
+          file(id: 'apple-word', title: 'Apple'),
+          file(id: 'app', title: 'App'),
+          file(id: 'han', title: '中'),
+          folder('fa', 'A'),
+          file(id: 'pin-m', title: 'aaa'),
+        ],
+        pinnedFolderIds: ['pin-f'],
+        pinnedMemoIds: ['pin-m'],
+        fileListSort: FileListSort.name,
+        untitledLabel: untitled,
+      );
+      expect(sorted.map((e) => e.id).toList(), [
+        'pin-f',
+        'pin-m',
+        'fa',
+        'fb',
+        'app',
+        'apple-word',
+        'zed',
+        'apple',
+        'han',
       ]);
     });
 
@@ -415,6 +508,61 @@ void main() {
       final invalid = service.folderFromDirectory(dir);
       expect(invalid.displayName, '工作');
       expect(invalid.colorHex, isNull);
+    });
+
+    test('importExternalMemo 保留 txt、改写本地图、缺图与 https 不动', () async {
+      final external = Directory(p.join(tempRoot.path, 'external'));
+      await external.create();
+      await File(p.join(external.path, 'a.png')).writeAsBytes([1, 2, 3]);
+      final source = File(p.join(external.path, 'note.TXT'));
+      await source.writeAsString(
+        '标题\n\n正文\n'
+        '![说明](./a.png "标题")\n'
+        '![缺](./missing.png)\n'
+        '![网](https://example.com/a.png)\n',
+      );
+
+      final memo = await service.importExternalMemo(
+        sourcePath: source.path,
+        relativeParent: '',
+      );
+
+      expect(p.extension(memo.filePath), '.txt');
+      expect(memo.id, isNot('note'));
+      expect(memo.title, '标题');
+      final raw = File(memo.filePath).readAsStringSync();
+      expect(
+        raw,
+        contains('![说明](./${memo.id}_assets/a.png "标题")'),
+      );
+      expect(raw, contains('![缺](./missing.png)'));
+      expect(raw, contains('![网](https://example.com/a.png)'));
+      expect(
+        File(
+          p.join(p.dirname(memo.filePath), '${memo.id}_assets', 'a.png'),
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('importExternalMemo 非法编码不留下文件', () async {
+      final external = Directory(p.join(tempRoot.path, 'external_bad'));
+      await external.create();
+      final source = File(p.join(external.path, 'bad.txt'));
+      await source.writeAsBytes([0xFF, 0xFE]);
+
+      await expectLater(
+        service.importExternalMemo(
+          sourcePath: source.path,
+          relativeParent: '',
+        ),
+        throwsFormatException,
+      );
+
+      final docs = Directory(
+        p.join(tempRoot.path, MemoFs.documentsFolderName),
+      );
+      expect(docs.existsSync(), isFalse);
     });
   });
 

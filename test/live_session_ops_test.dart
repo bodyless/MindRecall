@@ -284,6 +284,104 @@ void main() {
     });
   });
 
+  group('paragraphFlowAfterHeadingToBody', () {
+    List<MdBlock> headingToBody(List<MdBlock> blocks, int index) {
+      final before = blocks[index];
+      final reparsed = reparseBlockFromLineMarkdown(
+        before,
+        lineMarkdown: applyParagraphLineMarkdown(before.toMarkdown()),
+      );
+      final next = List<MdBlock>.of(blocks);
+      next[index] = reparsed;
+      paragraphFlowAfterHeadingToBody(
+        blocks: next,
+        index: index,
+        before: before,
+      );
+      syncParagraphFlowFlags(next);
+      return next;
+    }
+
+    test('标题改为正文且下一块是段落时收成段内行距', () {
+      final blocks = headingToBody(
+        const [
+          HeadingBlock(id: 'h', level: 1, text: 'Title'),
+          ParagraphBlock(id: 'p', text: 'body'),
+        ],
+        0,
+      );
+
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isTrue);
+      expect(MdBlockStyles.bottomSpacingFor(blocks[0], next: blocks[1]), 0);
+    });
+
+    test('标题上下都是正文时两处间距都收成段内行距', () {
+      final blocks = headingToBody(
+        const [
+          ParagraphBlock(id: 'a', text: '上文'),
+          HeadingBlock(id: 'h', level: 1, text: '标题1'),
+          ParagraphBlock(id: 'b', text: '下文'),
+        ],
+        1,
+      );
+
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isTrue);
+      expect((blocks[1] as ParagraphBlock).continuesWithNext, isTrue);
+      expect(MdBlockStyles.bottomSpacingFor(blocks[0], next: blocks[1]), 0);
+      expect(MdBlockStyles.bottomSpacingFor(blocks[1], next: blocks[2]), 0);
+    });
+
+    test('标题改为正文但下一块不是段落时仍用块间距', () {
+      final blocks = headingToBody(
+        const [
+          HeadingBlock(id: 'h', level: 2, text: 'Title'),
+          BulletBlock(id: 'b', text: 'item'),
+        ],
+        0,
+      );
+
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isFalse);
+      expect(
+        MdBlockStyles.bottomSpacingFor(blocks[0], next: blocks[1]),
+        MdBlockStyles.blockGap,
+      );
+    });
+
+    test('上一块是列表时不给列表打 flow', () {
+      final blocks = headingToBody(
+        const [
+          BulletBlock(id: 'b', text: 'item'),
+          HeadingBlock(id: 'h', level: 1, text: 'Title'),
+          ParagraphBlock(id: 'p', text: 'body'),
+        ],
+        1,
+      );
+
+      expect(blocks[0], isA<BulletBlock>());
+      expect(
+        MdBlockStyles.bottomSpacingFor(blocks[0], next: blocks[1]),
+        MdBlockStyles.blockGap,
+      );
+      expect(MdBlockStyles.bottomSpacingFor(blocks[1], next: blocks[2]), 0);
+    });
+
+    test('列表改为正文不打段内 flow', () {
+      final blocks = headingToBody(
+        const [
+          BulletBlock(id: 'b', text: 'item'),
+          ParagraphBlock(id: 'p', text: 'body'),
+        ],
+        0,
+      );
+
+      expect((blocks[0] as ParagraphBlock).continuesWithNext, isFalse);
+      expect(
+        MdBlockStyles.bottomSpacingFor(blocks[0], next: blocks[1]),
+        MdBlockStyles.blockGap,
+      );
+    });
+  });
+
   group('copyWithContinuesWithNext', () {
     test('仅段落携带 flow 标记', () {
       final para = ParagraphBlock(id: 'p', text: 'a');

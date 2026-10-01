@@ -36,6 +36,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get newFolder => '新建文件夹';
 
   @override
+  String get importDocument => '导入文档';
+
+  @override
+  String get importEncodingUnsupported => '无法按 UTF-8 或 GBK 读取该文件';
+
+  @override
   String get goToParentDirectory => '返回上级目录';
 
   @override
@@ -174,6 +180,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsFontSize => '字体大小';
+
+  @override
+  String get settingsFileSort => '文件排序';
+
+  @override
+  String get fileSortModifiedTime => '修改时间';
+
+  @override
+  String get fileSortName => '名称';
 
   @override
   String get settingsDebug => '调试';

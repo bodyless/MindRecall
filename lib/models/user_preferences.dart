@@ -27,12 +27,31 @@ enum AppFontSize {
       };
 }
 
+/// 当前目录侧栏的非置顶排序。存储字符串与枚举名相同。
+enum FileListSort {
+  modifiedTime,
+  name;
+
+  static FileListSort fromStorage(String? value) {
+    return switch (value) {
+      'name' => FileListSort.name,
+      _ => FileListSort.modifiedTime,
+    };
+  }
+
+  String get storageValue => switch (this) {
+        FileListSort.modifiedTime => 'modifiedTime',
+        FileListSort.name => 'name',
+      };
+}
+
 class UserPreferences {
   const UserPreferences({
     required this.themeMode,
     required this.localeCode,
     this.lastOpenedMemoId,
     this.fontSize = AppFontSize.medium,
+    this.fileListSort = FileListSort.modifiedTime,
     this.debugToolsEnabled = false,
     this.debugShowFps = true,
     this.debugShowImeHud = true,
@@ -43,6 +62,9 @@ class UserPreferences {
   final String localeCode;
   final String? lastOpenedMemoId;
   final AppFontSize fontSize;
+
+  /// 当前目录非置顶条目的排序；缺省为修改时间。
+  final FileListSort fileListSort;
 
   /// 仅 Debug 构建下有意义：调试总开关；关闭时隐藏子项叠层。
   final bool debugToolsEnabled;
@@ -71,6 +93,7 @@ class UserPreferences {
       localeCode: json['localeCode'] as String? ?? 'zh',
       lastOpenedMemoId: json['lastOpenedMemoId'] as String?,
       fontSize: AppFontSize.fromStorage(json['fontSize'] as String?),
+      fileListSort: FileListSort.fromStorage(json['fileListSort'] as String?),
       debugToolsEnabled: json['debugToolsEnabled'] as bool? ?? false,
       debugShowFps: json['debugShowFps'] as bool? ?? true,
       debugShowImeHud: json['debugShowImeHud'] as bool? ?? true,
@@ -83,6 +106,7 @@ class UserPreferences {
       'themeMode': _themeModeToString(themeMode),
       'localeCode': localeCode,
       'fontSize': fontSize.storageValue,
+      'fileListSort': fileListSort.storageValue,
       'debugToolsEnabled': debugToolsEnabled,
       'debugShowFps': debugShowFps,
       'debugShowImeHud': debugShowImeHud,
@@ -96,6 +120,7 @@ class UserPreferences {
     String? localeCode,
     String? lastOpenedMemoId,
     AppFontSize? fontSize,
+    FileListSort? fileListSort,
     bool? debugToolsEnabled,
     bool? debugShowFps,
     bool? debugShowImeHud,
@@ -106,6 +131,7 @@ class UserPreferences {
       themeMode: themeMode ?? this.themeMode,
       localeCode: localeCode ?? this.localeCode,
       fontSize: fontSize ?? this.fontSize,
+      fileListSort: fileListSort ?? this.fileListSort,
       debugToolsEnabled: debugToolsEnabled ?? this.debugToolsEnabled,
       debugShowFps: debugShowFps ?? this.debugShowFps,
       debugShowImeHud: debugShowImeHud ?? this.debugShowImeHud,

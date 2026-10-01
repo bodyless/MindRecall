@@ -152,6 +152,18 @@ abstract class AppLocalizations {
   /// **'新建文件夹'**
   String get newFolder;
 
+  /// No description provided for @importDocument.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入文档'**
+  String get importDocument;
+
+  /// No description provided for @importEncodingUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法按 UTF-8 或 GBK 读取该文件'**
+  String get importEncodingUnsupported;
+
   /// No description provided for @goToParentDirectory.
   ///
   /// In zh, this message translates to:
@@ -403,6 +415,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'字体大小'**
   String get settingsFontSize;
+
+  /// No description provided for @settingsFileSort.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件排序'**
+  String get settingsFileSort;
+
+  /// No description provided for @fileSortModifiedTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改时间'**
+  String get fileSortModifiedTime;
+
+  /// No description provided for @fileSortName.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称'**
+  String get fileSortName;
 
   /// No description provided for @settingsDebug.
   ///

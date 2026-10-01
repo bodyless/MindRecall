@@ -6,7 +6,7 @@ import 'package:mind_recall/models/memo_folder.dart';
 import 'package:mind_recall/models/memo_search_result.dart';
 import 'package:mind_recall/shared/widgets/highlighted_text.dart';
 
-enum _CreateAction { file, folder }
+enum _CreateAction { file, folder, import }
 
 enum _MemoFileAction { revealInExplorer, pin, rename, move, setColor, delete }
 
@@ -21,6 +21,7 @@ class MemoFilePanel extends StatelessWidget {
     required this.onGoToParent,
     required this.onCreateMemo,
     required this.onCreateFolder,
+    required this.onImportMemo,
     required this.onRenameMemo,
     required this.onDeleteMemo,
     required this.onRenameFolder,
@@ -55,6 +56,7 @@ class MemoFilePanel extends StatelessWidget {
   final VoidCallback onGoToParent;
   final VoidCallback onCreateMemo;
   final VoidCallback onCreateFolder;
+  final VoidCallback onImportMemo;
   final ValueChanged<String> onRenameMemo;
   final ValueChanged<String> onDeleteMemo;
   final ValueChanged<String> onRenameFolder;
@@ -115,6 +117,8 @@ class MemoFilePanel extends StatelessWidget {
                       onCreateMemo();
                     case _CreateAction.folder:
                       onCreateFolder();
+                    case _CreateAction.import:
+                      onImportMemo();
                   }
                 },
                 itemBuilder: (context) => [
@@ -125,6 +129,10 @@ class MemoFilePanel extends StatelessWidget {
                   PopupMenuItem(
                     value: _CreateAction.folder,
                     child: Text(l10n.newFolder),
+                  ),
+                  PopupMenuItem(
+                    value: _CreateAction.import,
+                    child: Text(l10n.importDocument),
                   ),
                 ],
                 icon: const Icon(Icons.add),

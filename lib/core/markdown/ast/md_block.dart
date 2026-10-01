@@ -1,3 +1,5 @@
+import '../parser/md_syntax_patterns.dart';
+
 /// 块级 Markdown AST，供实时 WYSIWYG 编辑使用。
 sealed class MdBlock {
   const MdBlock({required this.id});
@@ -244,10 +246,14 @@ final class ImageBlock extends MdBlock {
     required super.id,
     required this.alt,
     required this.src,
+    this.title,
   });
 
   final String alt;
   final String src;
+
+  /// 标准图片标题（`![alt](path "title")`）。空则写回时不带引号。界面不展示。
+  final String? title;
 
   @override
   String get plainText => alt.isEmpty ? src : alt;
@@ -257,13 +263,18 @@ final class ImageBlock extends MdBlock {
 
   @override
   ImageBlock copyWithPlainText(String text) =>
-      ImageBlock(id: id, alt: text, src: src);
+      ImageBlock(id: id, alt: text, src: src, title: title);
 
   @override
-  ImageBlock copyWithId(String id) => ImageBlock(id: id, alt: alt, src: src);
+  ImageBlock copyWithId(String id) =>
+      ImageBlock(id: id, alt: alt, src: src, title: title);
 
   @override
-  String toMarkdown() => '![$alt]($src)';
+  String toMarkdown() => formatStandaloneImageLine(
+        alt: alt,
+        destination: src,
+        title: title,
+      );
 }
 
 /// Markdown 分割线（thematic break）；无正文，实时按原子块交互。

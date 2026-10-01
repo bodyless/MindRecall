@@ -6,7 +6,9 @@ import 'package:path/path.dart' as p;
 
 import '../models/memo.dart';
 import '../models/memo_folder.dart';
+import '../models/user_preferences.dart';
 import 'app_storage_service.dart';
+import 'imported_text_codec.dart';
 import 'memo_fs_constants.dart';
 import 'memo_image_service.dart';
 import 'memo_trash_service.dart';
@@ -150,11 +152,34 @@ class MemoStorageService {
     });
   }
 
-  /// 当前层四段排序：置顶文件夹 → 置顶文件 → 文件夹（建立时间新→旧）→ 文件（修改时间新→旧）。
+  /// 侧栏可见名称：文件夹用 [MemoFolder.displayName]，文件用 [Memo.displayTitle]。
+  /// 只做码元升序；整段相同返回 0，不再比 id 或时间。
+  static int compareDirEntryByVisibleName(
+    MemoDirEntry a,
+    MemoDirEntry b,
+    String untitledLabel,
+  ) {
+    return _visibleListName(a, untitledLabel)
+        .compareTo(_visibleListName(b, untitledLabel));
+  }
+
+  static String _visibleListName(MemoDirEntry entry, String untitledLabel) {
+    if (entry.isFolder) {
+      return entry.folder!.displayName;
+    }
+    return entry.memo!.displayTitle(untitledLabel);
+  }
+
+  /// 当前层四段排序：置顶文件夹 → 置顶文件 → 非置顶文件夹 → 非置顶文件。
+  ///
+  /// [FileListSort.modifiedTime]：文件夹按建立时间新→旧（相同再比 id 降序），
+  /// 文件按修改时间新→旧。[FileListSort.name]：非置顶两段按可见名称码元升序。
   static List<MemoDirEntry> sortDirEntries({
     required List<MemoDirEntry> entries,
     required List<String> pinnedFolderIds,
     required List<String> pinnedMemoIds,
+    FileListSort fileListSort = FileListSort.modifiedTime,
+    String untitledLabel = '',
   }) {
     final pinnedFolders = <MemoDirEntry>[];
     final pinnedFiles = <MemoDirEntry>[];
@@ -181,14 +206,23 @@ class MemoStorageService {
 
     pinnedFolders.sort((a, b) => pinOrder(pinnedFolderIds, a, b));
     pinnedFiles.sort((a, b) => pinOrder(pinnedMemoIds, a, b));
-    folders.sort((a, b) {
-      final byTime = b.folder!.createdAt.compareTo(a.folder!.createdAt);
-      if (byTime != 0) {
-        return byTime;
-      }
-      return b.id.compareTo(a.id);
-    });
-    files.sort((a, b) => _compareByUpdatedAtDesc(a.memo!, b.memo!));
+    if (fileListSort == FileListSort.name) {
+      folders.sort(
+        (a, b) => compareDirEntryByVisibleName(a, b, untitledLabel),
+      );
+      files.sort(
+        (a, b) => compareDirEntryByVisibleName(a, b, untitledLabel),
+      );
+    } else {
+      folders.sort((a, b) {
+        final byTime = b.folder!.createdAt.compareTo(a.folder!.createdAt);
+        if (byTime != 0) {
+          return byTime;
+        }
+        return b.id.compareTo(a.id);
+      });
+      files.sort((a, b) => _compareByUpdatedAtDesc(a.memo!, b.memo!));
+    }
     return [...pinnedFolders, ...pinnedFiles, ...folders, ...files];
   }
 
@@ -235,6 +269,50 @@ class MemoStorageService {
       createdAt: createdAt,
       updatedAt: createdAt,
     );
+  }
+
+  /// 把外部 txt/md 拷进 [relativeParent]，分配新 id，扩展名保持 txt 或 md。
+  ///
+  /// 先解码再分配 id。不走 [createMemo] / [updateMemo]，避免改成空 md 或重排标题。
+  /// 正文写入失败时删掉本次资源和半成品文件。
+  Future<Memo> importExternalMemo({
+    required String sourcePath,
+    required String relativeParent,
+  }) async {
+    final bytes = await File(sourcePath).readAsBytes();
+    final text = decodeImportedTextBytes(bytes);
+    final ext = p.extension(sourcePath).toLowerCase();
+    if (!_memoExtensions.contains(ext)) {
+      throw ArgumentError('unsupported memo extension: $ext');
+    }
+
+    final docs = await memosDirectory();
+    final parent = resolveRelativeDir(docs, relativeParent);
+    if (!await parent.exists()) {
+      await parent.create(recursive: true);
+    }
+    final id = await allocateUniqueId();
+    final filePath = p.join(parent.path, '$id$ext');
+    final file = File(filePath);
+    try {
+      final rewritten = await memoImageService.rewriteImportedLocalImages(
+        markdown: text,
+        sourceFilePath: sourcePath,
+        memoId: id,
+        memoFilePath: filePath,
+      );
+      await file.writeAsString(rewritten);
+    } catch (error) {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      await memoImageService.deleteAssets(
+        memoId: id,
+        memoFilePath: filePath,
+      );
+      rethrow;
+    }
+    return _memoFromFile(file);
   }
 
   Future<MemoFolder> createFolder({

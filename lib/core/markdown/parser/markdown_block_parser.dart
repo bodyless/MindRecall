@@ -12,7 +12,9 @@ List<MdBlock> parseMarkdownBlocks(
     return [ParagraphBlock(id: ids.next(), text: '')];
   }
 
-  final lines = text.split('\n');
+  // Windows 导入常为 CRLF。只按 \n 切开时行尾会留下 \r，标题与有序列表的
+  // `$` 匹配失败，整行变成段落。与粘贴路径的换行规范化一致。
+  final lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
   final blocks = <MdBlock>[];
   var index = 0;
 
@@ -58,13 +60,14 @@ List<MdBlock> parseMarkdownBlocks(
       continue;
     }
 
-    if (MdSyntaxPatterns.imageLine.hasMatch(line.trim())) {
-      final match = MdSyntaxPatterns.imageLine.firstMatch(line.trim())!;
+    final image = parseStandaloneImageLine(line);
+    if (image != null) {
       blocks.add(
         ImageBlock(
           id: ids.next(),
-          alt: match.group(1) ?? '',
-          src: match.group(2) ?? '',
+          alt: image.alt,
+          src: image.destination,
+          title: image.title,
         ),
       );
       index++;

@@ -81,6 +81,7 @@ class MemoEditorScreen extends StatefulWidget {
 
 class _MemoEditorScreenState extends State<MemoEditorScreen> {
   static const _autoSaveDelay = Duration(milliseconds: 800);
+  static const _importMemoExtensions = ['txt', 'md'];
   static const _sidebarWidth = 280.0;
   static const _contentLineHeight = 24.0;
   static const _liveFocusBlurGrace = Duration(milliseconds: 400);
@@ -230,6 +231,10 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
   }
 
   Future<void> _initializeWorkspace() async {
+    final prefs = widget.prefsService.preferences;
+    _workspace.fileListSort = prefs.fileListSort;
+    _workspace.untitledLabel =
+        lookupAppLocalizations(prefs.locale).untitled;
     await debugTimelineAsync('Editor.initWorkspace', () async {
       try {
         await debugTimelineAsync(
@@ -902,6 +907,62 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
     }
   }
 
+  /// 从系统文件框单选导入 txt/md。菜单的 onSelected 已恢复焦点，这里要再挂起一次。
+  Future<void> _importExternalMemo() async {
+    _suspendEditorFocus();
+    String? sourcePath;
+    String? unreadableName;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: _importMemoExtensions,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      sourcePath = result.files.single.path;
+      if (sourcePath == null) {
+        unreadableName = result.files.single.name;
+      }
+    } finally {
+      _resumeEditorFocus();
+    }
+    if (!mounted || (sourcePath == null && unreadableName == null)) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context)!;
+    if (sourcePath == null) {
+      _showMessage(l10n.importFailed(unreadableName ?? ''));
+      return;
+    }
+
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _suppressAutoSave = true;
+    try {
+      final memo = await _workspace.importExternalMemo(sourcePath);
+      if (!mounted) {
+        return;
+      }
+      _loadMemoIntoEditor(memo);
+      _activeBodyFocus.requestFocus();
+      _closeDrawerIfNeeded();
+    } on FormatException {
+      if (!mounted) {
+        return;
+      }
+      _showMessage(l10n.importEncodingUnsupported);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage(l10n.importFailed('$error'));
+    } finally {
+      _suppressAutoSave = false;
+    }
+  }
+
   /// 文档已由 Controller 写入编辑器；此处只做历史重置、偏好记录与滚动。
   void _loadMemoIntoEditor(Memo memo, {MemoJumpTarget? jumpTarget}) {
     _resetDocumentHistory();
@@ -1509,10 +1570,18 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
           },
           onLocaleChanged: (code) {
             widget.onLocaleChanged(Locale(code));
+            _workspace.untitledLabel =
+                lookupAppLocalizations(Locale(code)).untitled;
+            _workspace.resortDirEntries();
             setSheetState(() {});
           },
           onFontSizeChanged: (size) {
             widget.onFontSizeChanged(size);
+            setSheetState(() {});
+          },
+          onFileListSortChanged: (sort) {
+            unawaited(widget.prefsService.updateFileListSort(sort));
+            _workspace.setFileListSort(sort);
             setSheetState(() {});
           },
           onDebugToolsChanged: widget.onDebugToolsChanged == null
@@ -1796,6 +1865,7 @@ class _MemoEditorScreenState extends State<MemoEditorScreen> {
       onGoToParent: () => unawaited(_workspace.goToParentDirectory()),
       onCreateMemo: () => unawaited(_createNewMemo()),
       onCreateFolder: () => unawaited(_createFolder()),
+      onImportMemo: () => unawaited(_importExternalMemo()),
       onRenameMemo: (id) => unawaited(_renameMemo(id)),
       onDeleteMemo: (id) => unawaited(_deleteMemo(id)),
       onRenameFolder: (id) => unawaited(_renameFolder(id)),

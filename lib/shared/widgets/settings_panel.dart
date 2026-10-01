@@ -12,6 +12,7 @@ class SettingsPanel extends StatelessWidget {
     required this.onThemeModeChanged,
     required this.onLocaleChanged,
     required this.onFontSizeChanged,
+    required this.onFileListSortChanged,
     this.onDebugToolsChanged,
     this.onDebugShowFpsChanged,
     this.onDebugShowImeHudChanged,
@@ -49,6 +50,7 @@ class SettingsPanel extends StatelessWidget {
   final ValueChanged<ThemeMode> onThemeModeChanged;
   final ValueChanged<String> onLocaleChanged;
   final ValueChanged<AppFontSize> onFontSizeChanged;
+  final ValueChanged<FileListSort> onFileListSortChanged;
   final ValueChanged<bool>? onDebugToolsChanged;
   final ValueChanged<bool>? onDebugShowFpsChanged;
   final ValueChanged<bool>? onDebugShowImeHudChanged;
@@ -181,6 +183,27 @@ class SettingsPanel extends StatelessWidget {
               selected: {prefs.fontSize},
               onSelectionChanged: (selection) {
                 onFontSizeChanged(selection.first);
+              },
+            ),
+            const SizedBox(height: _sectionItemGap),
+            Text(l10n.settingsFileSort, style: theme.textTheme.titleSmall),
+            const SizedBox(height: _labelGap),
+            SegmentedButton<FileListSort>(
+              showSelectedIcon: false,
+              style: segmentStyle,
+              segments: [
+                ButtonSegment(
+                  value: FileListSort.modifiedTime,
+                  label: Text(l10n.fileSortModifiedTime),
+                ),
+                ButtonSegment(
+                  value: FileListSort.name,
+                  label: Text(l10n.fileSortName),
+                ),
+              ],
+              selected: {prefs.fileListSort},
+              onSelectionChanged: (selection) {
+                onFileListSortChanged(selection.first);
               },
             ),
 

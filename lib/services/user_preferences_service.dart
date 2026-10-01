@@ -77,6 +77,10 @@ class UserPreferencesService {
     return save(_preferences.copyWith(fontSize: fontSize));
   }
 
+  Future<void> updateFileListSort(FileListSort fileListSort) {
+    return save(_preferences.copyWith(fileListSort: fileListSort));
+  }
+
   Future<void> updateDebugToolsEnabled(bool enabled) {
     return save(_preferences.copyWith(debugToolsEnabled: enabled));
   }
